@@ -349,22 +349,38 @@ class OpenAICompatProvider implements LLMProvider {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.cfg.apiKey) headers.Authorization = `Bearer ${this.cfg.apiKey}`;
 
-    const res = await fetch(`${this.cfg.baseUrl}${this.cfg.chatPath}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: this.cfg.model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        temperature: 0,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.cfg.baseUrl}${this.cfg.chatPath}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: this.cfg.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          temperature: 0,
+        }),
+      });
+    } catch {
+      // fetch 가 던지는 "fetch failed" 는 사용자에게 아무것도 알려주지 않는다.
+      // 무엇에 연결하려다 실패했는지, 무엇을 하면 되는지 말한다.
+      throw new Error(unreachableMessage(this.cfg));
+    }
 
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`${this.cfg.label} 응답 실패 (${res.status}) ${detail.slice(0, 200)}`);
+      throw new Error(
+        `${this.cfg.label}가 ${res.status}로 응답했습니다. ` +
+          (res.status === 401 || res.status === 403
+            ? "API 키를 확인해 주세요."
+            : res.status === 404
+              ? `모델 이름(${this.cfg.model})이 맞는지 확인해 주세요.`
+              : res.status === 429
+                ? "요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+                : detail.slice(0, 160)),
+      );
     }
     const json = await res.json();
     return json.choices?.[0]?.message?.content ?? "";
@@ -421,6 +437,29 @@ class OpenAICompatProvider implements LLMProvider {
 }
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+
+/**
+ * 연결 자체가 안 될 때 무엇을 하면 되는지 알려준다.
+ *
+ * 배포 환경에서 기본값(온프레미스)이 그대로 남아 있으면 서버가 자기 자신의
+ * localhost:11434 를 부르게 되고, 그건 영원히 실패한다.
+ * 이 경우가 가장 흔해서 따로 짚어준다.
+ */
+function unreachableMessage(cfg: OpenAICompatConfig): string {
+  if (cfg.kind !== "onprem") {
+    return `${cfg.label}에 연결하지 못했습니다 (${cfg.baseUrl}). 네트워크 상태를 확인해 주세요.`;
+  }
+
+  const isLocalhost = /localhost|127\.0\.0\.1/.test(cfg.baseUrl);
+  if (isLocalhost) {
+    return (
+      `내부망 모델(${cfg.baseUrl})에 연결하지 못했습니다. ` +
+      "로컬에서는 Ollama가 실행 중인지 확인하세요. " +
+      "배포 환경이라면 서버에 로컬 모델이 없으므로 AI_PROVIDER를 gemini 또는 claude로 설정해야 합니다."
+    );
+  }
+  return `내부망 모델(${cfg.baseUrl})에 연결하지 못했습니다. 엔드포인트가 켜져 있는지 확인해 주세요.`;
+}
 
 function onPremConfig(): OpenAICompatConfig {
   return {
