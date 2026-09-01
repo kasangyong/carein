@@ -1,0 +1,293 @@
+@import "tailwindcss";
+
+/*
+  carein — 돌봄 재무 내비게이터
+
+  디자인 방향
+    이 화면은 "돈 계산"인데 대상은 "부모 돌봄"이다. 너무 차가우면 잔인하고
+    너무 따뜻하면 신뢰가 안 간다. 그 사이를 잡기 위해 공공 고지서의 시각 언어를
+    빌리되(구획선, 표, 정렬된 숫자) 종이 질감이나 장식은 쓰지 않는다.
+
+    숫자가 주인공이다. 본문은 IBM Plex Sans KR, 숫자와 라벨은 IBM Plex Mono.
+    유일한 그림은 "버티는 기간 막대" 하나. 나머지는 전부 표로 간다.
+*/
+
+:root {
+  --bg: #edf0f3;
+  --surface: #ffffff;
+  --surface-sunk: #f5f7f9;
+  --ink: #12212e;
+  --ink-2: #4a5c6b;
+  --ink-3: #7c8b98;
+  --line: #d3dae0;
+  --line-strong: #adb9c4;
+
+  --primary: #14496e;
+  --primary-soft: #e3ecf3;
+  --accent: #0e7c6b;
+  --accent-soft: #dff0ec;
+  --warn: #a8402c;
+  --warn-soft: #f7e6e2;
+
+  --radius: 3px;
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-plex-kr);
+  --font-mono: var(--font-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-plex-kr), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/*
+  숫자는 항상 등폭 정렬 — 표에서 자릿수가 흔들리면 안 된다.
+  한글이 섞여도 깨지지 않도록 mono 다음에 한글 sans를 둔다.
+  (mono 폰트에 한글 글리프가 없어 generic monospace 로 떨어지면 자간이 무너진다)
+*/
+.num {
+  font-family: var(--font-plex-mono), var(--font-plex-kr), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/*
+  라벨. 한글이 mono 폰트에 없어서 fallback되면 자간이 무너진다.
+  그래서 라벨은 sans로 두고, mono 는 숫자에만 쓴다(.num).
+*/
+.eyebrow {
+  font-family: var(--font-plex-kr), system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+
+/* 라틴 문자·숫자만 있는 라벨에만 mono 처리를 준다 */
+.eyebrow-latin {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+a {
+  color: var(--primary);
+}
+
+button {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ── 구조 ── */
+
+.shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+/*
+  엔진 배지 — 장식이 아니다.
+  어느 숫자를 규칙이 냈고 어느 문장을 AI가 썼는지 구분하는 것이
+  이 서비스의 핵심 주장이라, 구조 장치로 쓴다.
+*/
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-plex-kr), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 2px 7px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.badge-rule {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.badge-ai {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge-check {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* ── 시그니처: 버티는 기간 막대 ── */
+
+.gauge {
+  position: relative;
+  height: 34px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.gauge-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--primary) 0 7px,
+    #1a5580 7px 8px
+  );
+  transform-origin: left center;
+  animation: gauge-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.gauge-fill.is-after {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--accent) 0 7px,
+    #12907d 7px 8px
+  );
+}
+
+@keyframes gauge-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.gauge-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+/* ── 표 ── */
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+table.data th {
+  text-align: left;
+  font-family: var(--font-plex-kr), system-ui, sans-serif;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  color: var(--ink-3);
+  font-weight: 500;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+table.data td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+table.data tr:last-child td {
+  border-bottom: 0;
+}
+table.data td.right,
+table.data th.right {
+  text-align: right;
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+/* ── 계산 전개 ── */
+
+.calcstep {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--line);
+  align-items: baseline;
+}
+.calcstep:last-child {
+  border-bottom: 0;
+}
+.calcstep.is-total {
+  border-top: 2px solid var(--ink);
+  border-bottom: 0;
+  margin-top: 6px;
+  padding-top: 10px;
+  font-weight: 600;
+}
+.calcstep .formula {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 12px;
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
