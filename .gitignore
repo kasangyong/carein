@@ -1,0 +1,21 @@
+# 의존성·빌드 산출물
+node_modules/
+.next/
+out/
+build/
+.vercel/
+
+# 환경변수
+.env
+.env.*
+!.env.example
+
+# 대회 주최측 배포 파일 — 공개 다운로드물이라 저장소에 넣지 않는다
+공식자료/
+*.docx
+
+# OS·에디터
+.DS_Store
+Thumbs.db
+*.log
+.playwright-mcp/
