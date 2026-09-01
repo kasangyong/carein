@@ -1,5 +1,5 @@
 /**
- * 모델 어댑터 — Claude API / 온프레미스 전환 계층
+ * 모델 어댑터 — 온프레미스 / Gemini / Claude 전환 계층
  *
  * 이 파일이 이 프로젝트의 아키텍처 주장을 코드로 증명한다.
  *
@@ -7,13 +7,16 @@
  *   LLM  = 문서 판독 + 설명 생성    ← 이 파일. 교체 가능
  *
  * 금융권은 망분리 때문에 고객 데이터를 외부 API로 보낼 수 없다.
- * 우리 설계는 LLM이 판정하지 않으므로, 온프레미스 소형 모델로 갈아끼워도
- * 판정 결과가 바뀌지 않는다. 파인튜닝 모델은 이 주장을 할 수 없다.
+ * 우리 설계는 LLM이 판정하지 않으므로, 어느 모델로 갈아끼워도
+ * 제도 판정과 금액 계산 결과가 바뀌지 않는다.
+ * 파인튜닝 모델은 판정이 가중치 안에 있어 이 주장을 할 수 없다.
+ *
+ * 프로바이더가 셋이라는 것 자체가 증거다. 하나면 주장이지만 셋이면 대조할 수 있다.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 
-export type ProviderKind = "claude" | "onprem";
+export type ProviderKind = "claude" | "onprem" | "gemini";
 
 export interface ProviderInfo {
   kind: ProviderKind;
@@ -303,32 +306,54 @@ function taskPrompt(task: ExplainRequest["task"]): string {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 온프레미스 프로바이더 (OpenAI 호환 로컬 엔드포인트 — Ollama / vLLM)
+// OpenAI 호환 프로바이더
+//
+// Ollama·vLLM 같은 내부망 엔드포인트와 Gemini 를 같은 코드로 다룬다.
+// Gemini 가 OpenAI 호환 경로를 제공하기 때문에 어댑터 하나로 덮인다.
+//
+// 프로바이더가 셋이 되면서 "판정이 모델과 무관하다"는 주장이
+// 말이 아니라 대조 가능한 사실이 된다.
 // ─────────────────────────────────────────────────────────────
 
-class OnPremProvider implements LLMProvider {
-  constructor(
-    private baseUrl: string,
-    private model: string,
-  ) {}
+interface OpenAICompatConfig {
+  kind: ProviderKind;
+  label: string;
+  baseUrl: string;
+  /** baseUrl 뒤에 붙는 경로. Ollama 는 /v1/chat/completions, Gemini 는 /chat/completions */
+  chatPath: string;
+  model: string;
+  apiKey?: string;
+  dataLeavesPremise: boolean;
+  /** 이미지 입력을 지원하는가 */
+  vision: boolean;
+  note: string;
+}
+
+type ChatContent = string | { type: string; text?: string; image_url?: { url: string } }[];
+
+class OpenAICompatProvider implements LLMProvider {
+  constructor(private cfg: OpenAICompatConfig) {}
 
   info(): ProviderInfo {
     return {
-      kind: "onprem",
-      label: "온프레미스 sLLM",
-      model: this.model,
-      dataLeavesPremise: false,
-      available: !!this.baseUrl,
-      note: "데이터가 내부망을 벗어나지 않습니다. 문서 판독 정확도는 낮아지지만 제도 판정과 금액 계산은 룰 엔진이 하므로 결과가 동일합니다.",
+      kind: this.cfg.kind,
+      label: this.cfg.label,
+      model: this.cfg.model,
+      dataLeavesPremise: this.cfg.dataLeavesPremise,
+      available: !!this.cfg.baseUrl && (!this.cfg.apiKey || this.cfg.apiKey.length > 0),
+      note: this.cfg.note,
     };
   }
 
-  private async chat(system: string, user: string): Promise<string> {
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+  private async chat(system: string, user: ChatContent): Promise<string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.cfg.apiKey) headers.Authorization = `Bearer ${this.cfg.apiKey}`;
+
+    const res = await fetch(`${this.cfg.baseUrl}${this.cfg.chatPath}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
-        model: this.model,
+        model: this.cfg.model,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -336,22 +361,53 @@ class OnPremProvider implements LLMProvider {
         temperature: 0,
       }),
     });
-    if (!res.ok) throw new Error(`온프레미스 모델 응답 실패: ${res.status}`);
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`${this.cfg.label} 응답 실패 (${res.status}) ${detail.slice(0, 200)}`);
+    }
     const json = await res.json();
     return json.choices?.[0]?.message?.content ?? "";
   }
 
-  async extractDocument(_input: ExtractRequest): Promise<ExtractResult> {
-    // 로컬 소형 모델은 이미지 판독 품질이 낮다. 실패를 숨기지 않고 그대로 보고한다.
-    return {
-      docType: "unknown",
-      fields: {},
-      confidence: {},
-      notes: [
-        "온프레미스 모드에서는 문서 자동 판독을 사용하지 않습니다. 값을 직접 입력해 주세요.",
-        "판정과 계산은 룰 엔진이 수행하므로 결과 정확도는 동일합니다.",
+  async extractDocument(input: ExtractRequest): Promise<ExtractResult> {
+    if (!this.cfg.vision) {
+      // 실패를 숨기지 않고 그대로 보고한다.
+      return {
+        docType: "unknown",
+        fields: {},
+        confidence: {},
+        notes: [
+          `${this.cfg.label} 에서는 문서 자동 판독을 사용하지 않습니다. 값을 직접 입력해 주세요.`,
+          "판정과 계산은 룰 엔진이 수행하므로 결과 정확도는 동일합니다.",
+        ],
+      };
+    }
+
+    const dataUri = `data:${input.mediaType};base64,${input.data}`;
+    const raw = await this.chat(
+      `${SYSTEM_EXTRACT}\n\n응답은 JSON 객체 하나만 출력한다. 코드 블록으로 감싸지 않는다.\n{ "docType": string, "fields": object, "confidence": object, "notes": string[] }`,
+      [
+        { type: "image_url", image_url: { url: dataUri } },
+        {
+          type: "text",
+          text: `이 서류에서 장기요양 등급, 등급 유효기간, 수급자 나이 또는 생년월일, 진단명·상병코드, 금액, 발급 기관을 찾아 추출해줘.\n${input.docHint ?? ""}`,
+        },
       ],
-    };
+    );
+
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    try {
+      return JSON.parse(cleaned) as ExtractResult;
+    } catch {
+      return {
+        docType: "unknown",
+        fields: {},
+        confidence: {},
+        notes: ["판독 결과를 해석하지 못했습니다. 값을 직접 입력해 주세요."],
+        raw: cleaned.slice(0, 500),
+      };
+    }
   }
 
   async explain(input: ExplainRequest): Promise<string> {
@@ -364,33 +420,71 @@ class OnPremProvider implements LLMProvider {
   }
 }
 
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+
+function onPremConfig(): OpenAICompatConfig {
+  return {
+    kind: "onprem",
+    label: "온프레미스 sLLM",
+    baseUrl: process.env.ONPREM_BASE_URL ?? "http://localhost:11434",
+    chatPath: "/v1/chat/completions",
+    model: process.env.ONPREM_MODEL ?? "exaone3.5:7.8b",
+    dataLeavesPremise: false,
+    // 소형 로컬 모델은 한국어 표 판독 품질이 낮아 켜지 않는다
+    vision: false,
+    note: "데이터가 내부망을 벗어나지 않습니다. 문서 판독은 수동 입력으로 대체되지만, 제도 판정과 금액 계산은 룰 엔진이 하므로 결과가 동일합니다.",
+  };
+}
+
+function geminiConfig(): OpenAICompatConfig {
+  return {
+    kind: "gemini",
+    label: "Gemini API",
+    baseUrl: process.env.GEMINI_BASE_URL ?? GEMINI_BASE,
+    chatPath: "/chat/completions",
+    model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+    apiKey: process.env.GEMINI_API_KEY,
+    dataLeavesPremise: true,
+    vision: true,
+    note: "무료 한도가 있어 공개 데모에 적합합니다. 전송 전 PII를 마스킹하지만 데이터가 외부로 나갑니다. 금융기관 내부망 배포 시에는 온프레미스로 전환하세요.",
+  };
+}
+
 // ─────────────────────────────────────────────────────────────
 
 export function getProvider(kind?: ProviderKind): LLMProvider {
-  // 내부망 배포를 기본으로 둔다. 금융기관에 들어가는 것을 전제로 만든 서비스다.
+  // 기본은 내부망이다. 금융기관에 들어가는 것을 전제로 만든 서비스다.
+  // 공개 배포에서는 AI_PROVIDER=gemini 로 바꾼다.
   const requested = kind ?? (process.env.AI_PROVIDER as ProviderKind) ?? "onprem";
 
-  if (requested === "onprem") {
-    return new OnPremProvider(
-      process.env.ONPREM_BASE_URL ?? "http://localhost:11434",
-      process.env.ONPREM_MODEL ?? "exaone3.5:7.8b",
-    );
-  }
+  switch (requested) {
+    case "onprem":
+      return new OpenAICompatProvider(onPremConfig());
 
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY가 설정되지 않았습니다.");
-  return new ClaudeProvider(key);
+    case "gemini": {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
+      }
+      return new OpenAICompatProvider(geminiConfig());
+    }
+
+    case "claude": {
+      const key = process.env.ANTHROPIC_API_KEY;
+      if (!key) throw new Error("ANTHROPIC_API_KEY가 설정되지 않았습니다.");
+      return new ClaudeProvider(key);
+    }
+  }
 }
 
 export function listProviders(): ProviderInfo[] {
-  const out: ProviderInfo[] = [
+  return [
     {
-      kind: "claude",
-      label: "Claude API",
-      model: MODEL,
+      kind: "gemini",
+      label: "Gemini API",
+      model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
       dataLeavesPremise: true,
-      available: !!process.env.ANTHROPIC_API_KEY,
-      note: "문서 자동 판독 사용 가능. 전송 전 PII 마스킹.",
+      available: !!process.env.GEMINI_API_KEY,
+      note: "무료 한도가 있어 공개 데모에 적합합니다. 문서 판독 가능. 전송 전 PII 마스킹.",
     },
     {
       kind: "onprem",
@@ -400,6 +494,13 @@ export function listProviders(): ProviderInfo[] {
       available: !!process.env.ONPREM_BASE_URL,
       note: "데이터 외부 전송 없음. 문서 판독은 수동 입력으로 대체.",
     },
+    {
+      kind: "claude",
+      label: "Claude API",
+      model: MODEL,
+      dataLeavesPremise: true,
+      available: !!process.env.ANTHROPIC_API_KEY,
+      note: "문서 판독 정확도가 가장 높습니다. 전송 전 PII 마스킹.",
+    },
   ];
-  return out;
 }
