@@ -442,7 +442,7 @@ function geminiConfig(): OpenAICompatConfig {
     label: "Gemini API",
     baseUrl: process.env.GEMINI_BASE_URL ?? GEMINI_BASE,
     chatPath: "/chat/completions",
-    model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+    model: process.env.GEMINI_MODEL ?? "gemini-3.6-flash",
     apiKey: process.env.GEMINI_API_KEY,
     dataLeavesPremise: true,
     vision: true,
@@ -481,7 +481,7 @@ export function listProviders(): ProviderInfo[] {
     {
       kind: "gemini",
       label: "Gemini API",
-      model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL ?? "gemini-3.6-flash",
       dataLeavesPremise: true,
       available: !!process.env.GEMINI_API_KEY,
       note: "무료 한도가 있어 공개 데모에 적합합니다. 문서 판독 가능. 전송 전 PII 마스킹.",
