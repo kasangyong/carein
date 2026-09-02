@@ -22,7 +22,10 @@ export interface EligibilityRule {
     | "hasDementiaDiagnosis"
     | "remoteArea"
     | "copayTier"
-    | "careSetting";
+    | "careSetting"
+    | "livesAlone"
+    | "hasFamilySupport"
+    | "caregiverHasCareWorkerCert";
   op: "in" | "gte" | "lte" | "eq" | "exists";
   value: unknown;
   /** 이 조건을 사람 말로 */
@@ -129,6 +132,12 @@ export const PROGRAMS: Program[] = [
       "반드시 재가노인복지센터(방문요양센터)에 소속되어 근로계약을 맺어야 하며, 공단에 '가족인 요양보호사'로 등록된 시점부터 급여가 산정됩니다. 등록 전 돌봄은 소급되지 않습니다.",
     rules: [
       { field: "ltcGrade", op: "in", value: ["1", "2", "3", "4", "5"], describe: "돌봄 대상자가 장기요양 등급 보유" },
+      {
+        field: "caregiverHasCareWorkerCert",
+        op: "eq",
+        value: true,
+        describe: "돌보는 사람이 요양보호사 자격 보유",
+      },
     ],
     requires: ["ltc-benefit"],
     awareness: "low",
@@ -281,7 +290,10 @@ export const PROGRAMS: Program[] = [
     source: "보건복지부 노인정책",
     verified: "needs-check",
     caveat: "장기요양 급여 수급자는 원칙적으로 중복 이용이 제한됩니다.",
-    rules: [{ field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" }],
+    rules: [
+      { field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" },
+      { field: "incomePercentile", op: "lte", value: 96, describe: "기준 중위소득 96% 이하 (2026 기초연금 선정기준액 기준)" },
+    ],
     exclusiveWith: ["ltc-benefit"],
     awareness: "medium",
     beneficiary: "recipient",
@@ -301,7 +313,10 @@ export const PROGRAMS: Program[] = [
     source: "공공데이터포털 보건복지부 응급안전안심 서비스 대상자 기본정보",
     verified: "needs-check",
     caveat: "독거노인·조손가구 등 대상 요건이 있습니다.",
-    rules: [{ field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" }],
+    rules: [
+      { field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" },
+      { field: "livesAlone", op: "eq", value: true, describe: "독거 또는 조손가구" },
+    ],
     awareness: "low",
     beneficiary: "both",
     tags: ["안전", "원거리돌봄", "놓치기쉬움"],
@@ -340,7 +355,10 @@ export const PROGRAMS: Program[] = [
     source: "보건복지부 노인정책",
     verified: "needs-check",
     caveat: "2026년 기준연금액 확인 필요. 부부 동시 수급 시 감액됩니다.",
-    rules: [{ field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" }],
+    rules: [
+      { field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" },
+      { field: "incomePercentile", op: "lte", value: 96, describe: "기준 중위소득 96% 이하 (2026 기초연금 선정기준액 단독 247만원 ÷ 1인가구 중위소득 256만 4,238원)" },
+    ],
     awareness: "high",
     beneficiary: "recipient",
     tags: ["소득", "연금"],
@@ -449,6 +467,12 @@ export const PROGRAMS: Program[] = [
     rules: [
       { field: "hasDementiaDiagnosis", op: "eq", value: true, describe: "치매 진단" },
       { field: "recipientAge", op: "gte", value: 60, describe: "만 60세 이상" },
+      {
+        field: "hasFamilySupport",
+        op: "eq",
+        value: false,
+        describe: "의사결정을 도울 가족이 없음",
+      },
     ],
     awareness: "low",
     beneficiary: "recipient",
@@ -488,7 +512,10 @@ export const PROGRAMS: Program[] = [
     verified: "needs-check",
     caveat:
       "장기요양 등급을 받을 정도의 상태면 참여가 어렵습니다. 등급 판정 전 단계에서 검토할 항목입니다.",
-    rules: [{ field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" }],
+    rules: [
+      { field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" },
+      { field: "incomePercentile", op: "lte", value: 96, describe: "기준 중위소득 96% 이하 (2026 기초연금 선정기준액 기준)" },
+    ],
     exclusiveWith: ["ltc-benefit"],
     awareness: "high",
     beneficiary: "recipient",

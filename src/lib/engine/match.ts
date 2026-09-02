@@ -22,6 +22,10 @@ export interface CareProfile {
   copayTier?: CopayTier;
   careSetting?: CareSetting;
   region?: string;
+  /** 독거 여부 — 독거·조손가구를 요건으로 하는 제도가 있다 */
+  livesAlone?: boolean;
+  /** 의사결정을 도울 가족이 있는가 — 공공후견은 가족이 없을 때의 제도다 */
+  hasFamilySupport?: boolean;
 
   /** 돌보는 사람 (자녀) */
   caregiverEmployed?: boolean;
@@ -29,6 +33,8 @@ export interface CareProfile {
   caregiverAge?: number;
   caregiverTenureYears?: number;
   siblingCount?: number;
+  /** 돌보는 사람이 요양보호사 자격을 가지고 있는가 */
+  caregiverHasCareWorkerCert?: boolean;
 }
 
 export type Verdict = "eligible" | "ineligible" | "unknown";
