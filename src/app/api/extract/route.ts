@@ -5,6 +5,7 @@ import {
   type ExtractResult,
 } from "@/lib/ai/provider";
 import { mapExtractionToProfile } from "@/lib/engine/extract-map";
+import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 /**
  * 문서 판독. LLM이 개입하는 두 경로 중 하나.
@@ -20,6 +21,9 @@ const ALLOWED = ["image/png", "image/jpeg", "image/webp", "application/pdf"] as 
 type Allowed = (typeof ALLOWED)[number];
 
 export async function POST(req: Request) {
+  const rl = rateLimit(req, "extract", 5, 60_000);
+  if (!rl.ok) return tooManyRequests(rl.retryAfter);
+
   // 파일 업로드 전용 경로다. 다른 형식으로 오면 서버 오류가 아니라 요청 오류다.
   let form: FormData;
   try {

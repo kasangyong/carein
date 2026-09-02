@@ -4,10 +4,12 @@ import {
   maskPII,
   neutralizeInjection,
   detectUngrounded,
+  isProviderKind,
   type ProviderKind,
   type ExplainRequest,
 } from "@/lib/ai/provider";
 import { getProgram } from "@/lib/kb/programs";
+import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 export async function GET() {
   return Response.json({ providers: listProviders() });
@@ -22,13 +24,54 @@ export async function GET() {
  *   3. 생성
  *   4. 근거 없는 금액 탐지 → 발견 시 경고와 함께 반환
  */
+const TASKS = ["program-summary", "decision-rationale", "next-steps"] as const;
+/** facts 는 그대로 프롬프트에 실린다. 크기를 안 재면 비용과 지연이 요청자 손에 있게 된다 */
+const MAX_FACTS_BYTES = 16 * 1024;
+const MAX_PROGRAM_IDS = 40;
+
 export async function POST(req: Request) {
+  const rl = rateLimit(req, "explain", 10, 60_000);
+  if (!rl.ok) return tooManyRequests(rl.retryAfter);
+
+  let body: Record<string, unknown>;
   try {
-    const body = await req.json();
-    const kind = (body.provider as ProviderKind) ?? undefined;
+    const parsed = await req.json();
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return Response.json({ error: "요청 본문은 객체여야 합니다." }, { status: 400 });
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "요청 본문이 JSON 형식이 아닙니다." }, { status: 400 });
+  }
+
+  try {
+    if (body.provider !== undefined && !isProviderKind(body.provider)) {
+      return Response.json(
+        { error: "provider 는 onprem · gemini · claude 중 하나여야 합니다." },
+        { status: 400 },
+      );
+    }
+    const kind = body.provider as ProviderKind | undefined;
+
+    if (body.task !== undefined && !TASKS.includes(body.task as (typeof TASKS)[number])) {
+      return Response.json(
+        { error: `task 는 ${TASKS.join(" · ")} 중 하나여야 합니다.` },
+        { status: 400 },
+      );
+    }
     const task = (body.task as ExplainRequest["task"]) ?? "program-summary";
+
     const facts = body.facts ?? {};
-    const programIds: string[] = body.programIds ?? [];
+    if (JSON.stringify(facts).length > MAX_FACTS_BYTES) {
+      return Response.json({ error: "facts 가 너무 큽니다." }, { status: 413 });
+    }
+
+    if (body.programIds !== undefined && !Array.isArray(body.programIds)) {
+      return Response.json({ error: "programIds 는 배열이어야 합니다." }, { status: 400 });
+    }
+    const programIds: string[] = ((body.programIds as unknown[]) ?? [])
+      .filter((id): id is string => typeof id === "string")
+      .slice(0, MAX_PROGRAM_IDS);
 
     const citations = programIds
       .map((id) => getProgram(id))
