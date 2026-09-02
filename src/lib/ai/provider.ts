@@ -72,7 +72,9 @@ export function maskPII(text: string): string {
   return text
     .replace(/\d{6}\s*[-–]\s*[1-4]\d{6}/g, "[주민등록번호]")
     .replace(/01[0-9]-?\d{3,4}-?\d{4}/g, "[전화번호]")
-    .replace(/\d{2,3}-\d{2,6}-\d{2,6}/g, "[계좌번호]")
+    // 앞뒤로 숫자가 붙어 있으면 계좌번호가 아니다.
+    // 이 경계가 없으면 "1955-03-21" 같은 날짜를 "1[계좌번호]" 로 뭉갠다.
+    .replace(/(?<![\d-])\d{2,3}-\d{2,6}-\d{2,6}(?![\d-])/g, "[계좌번호]")
     .replace(/[가-힣]{2,4}\s*(님|씨)(?=\s|$|,|\.)/g, "[이름]$1");
 }
 
@@ -548,7 +550,19 @@ export function getProvider(kind?: ProviderKind): LLMProvider {
       if (!key) throw new Error("ANTHROPIC_API_KEY가 설정되지 않았습니다.");
       return new ClaudeProvider(key);
     }
+
+    // 요청으로 들어온 값이라 유니온 밖의 문자열일 수 있다.
+    // 여기서 안 막으면 undefined 가 나가 호출부에서 터진다.
+    default:
+      throw new Error(
+        `지원하지 않는 프로바이더입니다: ${String(requested)}. onprem · gemini · claude 중 하나여야 합니다.`,
+      );
   }
+}
+
+/** 요청으로 들어온 프로바이더 이름이 허용값인지 */
+export function isProviderKind(v: unknown): v is ProviderKind {
+  return v === "onprem" || v === "gemini" || v === "claude";
 }
 
 export function listProviders(): ProviderInfo[] {
