@@ -147,6 +147,30 @@ export function enforceHedging(text: string): string {
   return out;
 }
 
+/**
+ * 마크다운 문법 제거.
+ *
+ * 설명 패널은 산문을 그대로 출력한다(pre-wrap). 모델이 목록을 요청받으면
+ * `### 1.` `**내용**` 같은 마크다운을 섞어 내보내는데, 그대로 두면 기호가
+ * 화면에 노출된다. 프롬프트로도 금지했지만 모델은 지시를 흘릴 수 있으므로
+ * 규칙으로 한 번 더 보증한다. 줄 구조는 유지해서 목록은 목록으로 읽히게 둔다.
+ */
+export function stripMarkdown(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s*#{1,6}\s*/, "")           // 제목 기호
+        .replace(/^\s*[-*+]\s+/, "· ")          // 불릿
+        .replace(/\*\*(.+?)\*\*/g, "$1")        // 굵게
+        .replace(/`([^`]+)`/g, "$1")            // 인라인 코드
+        .replace(/^\s*(?:-{3,}|={3,})\s*$/, ""), // 구분선
+    )
+    .join("\n")
+    .replace(/(?:\r?\n){3,}/g, "\n\n")
+    .trim();
+}
+
 /** M9.3 — 인용에 없는 고유명사·금액이 생성됐는지 검사 */
 export function detectUngrounded(
   output: string,
@@ -182,7 +206,9 @@ const SYSTEM_EXPLAIN = `너는 돌봄 재무 결과를 설명하는 역할이다
 - 계산하지 않는다. 계산은 이미 끝나 있다.
 - 근거를 찾을 수 없으면 "확인이 필요합니다"라고 쓴다.
 - 단정하지 않는다. "받을 수 있습니다" 대신 "요건을 충족하면 대상이 됩니다".
-- 돌보는 사람의 사정을 존중하는 톤. 훈계하거나 재촉하지 않는다.`;
+- 돌보는 사람의 사정을 존중하는 톤. 훈계하거나 재촉하지 않는다.
+- 마크다운을 쓰지 않는다. #, **, * 같은 기호 없이 문장으로만 쓴다.
+  목록이 필요하면 "1." "2." 처럼 번호만 붙인다.`;
 
 // ─────────────────────────────────────────────────────────────
 // Claude API 프로바이더
@@ -290,7 +316,7 @@ ${taskPrompt(input.task)}`,
 
     const text = res.content.find((b) => b.type === "text");
     const out = text && text.type === "text" ? text.text : "";
-    return enforceHedging(out);
+    return stripMarkdown(enforceHedging(out));
   }
 }
 
@@ -432,7 +458,7 @@ class OpenAICompatProvider implements LLMProvider {
       SYSTEM_EXPLAIN,
       `## 계산 결과\n${JSON.stringify(input.facts, null, 2)}\n\n## 근거\n${citationBlock}\n\n## 요청\n${taskPrompt(input.task)}`,
     );
-    return enforceHedging(out);
+    return stripMarkdown(enforceHedging(out));
   }
 }
 
