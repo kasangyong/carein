@@ -24,7 +24,7 @@ LLM  = 문서 판독 + 설명 문장 생성                ← 교체 가능
 프로바이더는 셋이다 — 온프레미스 sLLM, Gemini, Claude. 기본값은 온프레미스다.
 
 내부망 모델(Ollama + LG exaone3.5 7.8B)로 실제 검증한 결과, 자산 유지 기간·월 실부담·
-제도 판정 14건·퇴사 손익이 Claude API 모드와 **완전히 일치**했다. 차이는 문서 판독 품질과
+제도 판정 14건·퇴사 손익이 외부 API 모드와 **완전히 일치**했다. 차이는 문서 판독 품질과
 응답 속도뿐이다.
 
 | 태그 | 역할 |
@@ -51,8 +51,24 @@ ollama pull exaone3.5:7.8b
 ```
 
 모델이 없어도 제도 판정·비용 계산·10년 시뮬레이션·퇴사 손익은 전부 동작한다.
+LLM은 문서 판독과 설명 문장 생성에만 쓰이기 때문이다.
 
-외부 API 를 쓰려면 `AI_PROVIDER=claude` 와 `ANTHROPIC_API_KEY` 를 설정한다.
+외부 API 로 바꾸려면 환경변수만 바꾼다.
+
+| 프로바이더 | 설정 |
+|---|---|
+| `onprem` (기본값) | `ONPREM_BASE_URL`, `ONPREM_MODEL` |
+| `gemini` | `GEMINI_API_KEY`, `GEMINI_MODEL` (기본 `gemini-3.6-flash`) |
+| `claude` | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` |
+
+## 배포
+
+Vercel에 Git 연결로 배포한다. Next.js 앱이 **저장소 루트에 있으므로 Root Directory 는
+비워 둔다.** 공개 데모라면 `AI_PROVIDER=gemini` 와 `GEMINI_API_KEY` 를 Production 환경변수에
+넣는다 — 기본값 `onprem` 은 서버에 로컬 모델이 없어 설명 생성만 실패한다.
+
+Vercel Deployment Protection 이 켜져 있으면 접속자가 로그인 화면으로 튕기므로 공개 데모에서는
+해제한다.
 
 ## 검증
 
