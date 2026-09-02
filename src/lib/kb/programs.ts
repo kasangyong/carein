@@ -12,6 +12,19 @@
 
 export type VerificationStatus = "confirmed" | "needs-check";
 
+/**
+ * 금액 환산 방식.
+ *
+ * 현금 지급(monthlyAmount)이 아닌 제도도 재무에는 영향을 준다.
+ * 다만 근거가 있는 것만 환산한다 — 연간 정산이나 개별 심사로 정해지는
+ * 제도는 여기에 넣지 않고 금액 없이 "확인 필요"로 남긴다.
+ */
+export type Valuation =
+  /** 연 한도 안에서 공단이 대주는 제도 (복지용구) */
+  | { kind: "annualCap"; annualLimit: number }
+  /** 본인부담률 자체가 낮아지는 제도 (장기요양 본인부담금 감경) */
+  | { kind: "copayReduction" };
+
 /** 기계 판정 가능한 조건 */
 export interface EligibilityRule {
   field:
@@ -45,6 +58,8 @@ export interface Program {
   benefit: string;
   /** 월 환산 금액 (원). null 이면 금액 산정 불가 (현물·서비스) */
   monthlyAmount: number | null;
+  /** 현금이 아닌 제도의 월 환산 근거. 없으면 금액을 말하지 않는다 */
+  valuation?: Valuation;
   /** 금액이 상한인지 정액인지 */
   amountKind: "fixed" | "cap" | "in-kind" | "varies";
   /** 신청처 */
@@ -154,6 +169,7 @@ export const PROGRAMS: Program[] = [
       "재가급여 본인부담률 15% → 9%(경감 40%) 또는 6%(경감 60%). 시설급여 20% → 12% 또는 8%. 기초생활수급자는 면제.",
     monthlyAmount: null,
     amountKind: "varies",
+    valuation: { kind: "copayReduction" },
     applyAt: "국민건강보험공단 지사",
     legalBasis: "노인장기요양보험법 시행령",
     source: "국민건강보험공단 2026년 본인부담금 안내",
@@ -330,12 +346,21 @@ export const PROGRAMS: Program[] = [
     benefit: "연간 한도액 내에서 구입 또는 대여. 본인부담률은 장기요양 급여와 동일 체계.",
     monthlyAmount: null,
     amountKind: "cap",
+    valuation: { kind: "annualCap", annualLimit: 1_600_000 },
     applyAt: "국민건강보험공단 지사 · 복지용구 사업소",
     legalBasis: "노인장기요양보험법",
     source: "국민건강보험공단 장기요양 안내",
     verified: "needs-check",
     caveat: "2026년 연간 한도액 확인 필요.",
-    rules: [{ field: "ltcGrade", op: "exists", value: true, describe: "장기요양 등급 보유" }],
+    rules: [
+      { field: "ltcGrade", op: "exists", value: true, describe: "장기요양 등급 보유" },
+      {
+        field: "careSetting",
+        op: "in",
+        value: ["home", "family"],
+        describe: "재가 이용 (시설 입소자는 시설에서 제공)",
+      },
+    ],
     requires: ["ltc-benefit"],
     awareness: "medium",
     beneficiary: "recipient",
@@ -348,13 +373,14 @@ export const PROGRAMS: Program[] = [
     summary: "만 65세 이상 소득 하위 70%에게 매월 지급됩니다. 부모 소득으로 잡히므로 돌봄 재무에 직접 영향을 줍니다.",
     plainSummary: "만 65세가 넘고 형편이 넉넉하지 않으면 매달 나오는 돈입니다.",
     benefit: "소득인정액 기준 하위 70%에게 월정액 지급.",
-    monthlyAmount: null,
-    amountKind: "varies",
+    monthlyAmount: 349_700,
+    amountKind: "fixed",
     applyAt: "행정복지센터 · 국민연금공단 지사",
     legalBasis: "기초연금법",
-    source: "보건복지부 노인정책",
-    verified: "needs-check",
-    caveat: "2026년 기준연금액 확인 필요. 부부 동시 수급 시 감액됩니다.",
+    source: "보건복지부 2026년 기초연금 선정기준액·기준연금액",
+    verified: "confirmed",
+    caveat:
+      "2026년 기준연금액 349,700원(단독가구 기준). 부부 동시 수급 시 각각 20% 감액됩니다. 소득인정액은 재산을 소득으로 환산해 합산하므로 공단 확인이 필요합니다.",
     rules: [
       { field: "recipientAge", op: "gte", value: 65, describe: "만 65세 이상" },
       { field: "incomePercentile", op: "lte", value: 96, describe: "기준 중위소득 96% 이하 (2026 기초연금 선정기준액 단독 247만원 ÷ 1인가구 중위소득 256만 4,238원)" },

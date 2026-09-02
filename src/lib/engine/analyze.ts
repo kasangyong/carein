@@ -13,6 +13,7 @@ import { matchPrograms, type CareProfile, type MatchSummary } from "./match";
 import { calculateMonthlyCost, type CostResult, type CareSetting, type GradeOrNone, NO_GRADE } from "./cost";
 import { simulate, sensitivity, type SimulateResult } from "./simulate";
 import { evaluateQuitDecision, evaluateFamilyCaregiver, type DecisionResult } from "./decision";
+import { valuate, type ValuedSupport } from "./valuation";
 import type { CopayTier } from "./rates";
 
 export interface AnalyzeInput {
@@ -45,6 +46,8 @@ export interface AnalyzeResult {
   simulation: SimulateResult;
   /** 제도를 못 찾았을 경우 — 비교 기준선 */
   simulationWithoutPrograms: SimulateResult;
+  /** 현금이 아닌 제도의 월 환산액과 그 근거 */
+  valuedSupport: ValuedSupport[];
   sensitivity: ReturnType<typeof sensitivity>;
   decision: DecisionResult;
   familyCaregiver: ReturnType<typeof evaluateFamilyCaregiver>;
@@ -128,8 +131,35 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     programSupportMonthly: 0,
     pilotEligibleFromYear: undefined,
   });
-  const bestCaseSupport =
-    programs.countableMonthlyTotal + programs.potentialMonthlyTotal;
+  /**
+   * 현금이 아닌 제도의 환산액.
+   * 해당 + 확인필요를 함께 본다. 막대의 뜻이 "확인하고 신청하면"이기 때문이다.
+   */
+  const valuedSupport = [...programs.eligible, ...programs.unknown]
+    .map((m) => valuate(m.program, { setting: input.setting, copayTier, coveredGross: cost.coveredGross }))
+    .filter((v): v is ValuedSupport => v !== null);
+  const valuedMonthlyTotal = valuedSupport.reduce((s, v) => s + v.monthly, 0);
+
+  /**
+   * 제도가 재무에 닿는 방식이 둘이라 분리한다.
+   *   비용 감면 — 낼 돈이 줄어든다. 월 실부담에서 뺀다.
+   *   소득 증가 — 부모 통장에 돈이 들어온다. 부담액은 그대로고 순현금흐름만 좋아진다.
+   * 둘을 섞으면 "월 실부담 0원" 같은 표시가 나온다. 부담이 없어진 게 아니라
+   * 다른 데서 메운 것이므로 그렇게 쓰면 안 된다.
+   */
+  const cashPrograms = [...programs.eligible, ...programs.unknown].filter(
+    (m) => m.monthlyAmount !== null,
+  );
+  /** cap = 실제 지출을 되메워 주는 제도(치매치료관리비 등). fixed = 통장에 들어오는 현금 */
+  const costReduction =
+    valuedMonthlyTotal +
+    cashPrograms
+      .filter((m) => m.program.amountKind === "cap")
+      .reduce((sum, m) => sum + (m.monthlyAmount ?? 0), 0);
+  const incomeSupport = cashPrograms
+    .filter((m) => m.program.amountKind !== "cap")
+    .reduce((sum, m) => sum + (m.monthlyAmount ?? 0), 0);
+  const bestCaseSupport = costReduction + incomeSupport;
   const simulation = simulate({
     ...simInput,
     programSupportMonthly: bestCaseSupport,
@@ -178,6 +208,7 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     cost,
     simulation,
     simulationWithoutPrograms,
+    valuedSupport,
     sensitivity: sens,
     decision,
     familyCaregiver,
@@ -185,7 +216,7 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
       overlookedCount: programs.overlooked.length,
       annualSupport: bestCaseSupport * 12,
       survival: simulation.survivalLabel,
-      monthlyBurden: Math.max(0, cost.monthlyTotal - bestCaseSupport),
+      monthlyBurden: Math.max(0, cost.monthlyTotal - costReduction),
       monthlyBurdenBefore: costWithoutPrograms.monthlyTotal,
       decisionReversal: decision.isReversal,
       survivalWithoutPrograms: simulationWithoutPrograms.survivalLabel,
