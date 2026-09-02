@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     const text = await provider.explain({ facts: safeFacts, citations, task });
 
     // 4. 근거 검증
-    const ungrounded = detectUngrounded(text, citations);
+    const ungrounded = detectUngrounded(text, citations, safeFacts);
 
     return Response.json({
       text,

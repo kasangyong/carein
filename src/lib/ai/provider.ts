@@ -171,12 +171,22 @@ export function stripMarkdown(text: string): string {
     .trim();
 }
 
-/** M9.3 — 인용에 없는 고유명사·금액이 생성됐는지 검사 */
+/**
+ * M9.3 — 근거에 없는 금액이 생성됐는지 검사.
+ *
+ * 근거는 둘이다. 제도 원문(citations)과 룰엔진이 산출한 계산 결과(facts).
+ * facts 를 빼면 "월 실부담 1,140,000원"처럼 엔진이 직접 만든 값을 모델이
+ * 정확히 옮겨 적었는데도 근거 없음으로 잡힌다. 맞는 답에 빨간 경고가 붙는
+ * 오탐이라 가드레일 자체의 신뢰를 깎는다.
+ */
 export function detectUngrounded(
   output: string,
   citations: ExplainRequest["citations"],
+  facts?: unknown,
 ): string[] {
-  const corpus = citations.map((c) => c.title + " " + c.text).join(" ");
+  const corpus =
+    citations.map((c) => c.title + " " + c.text).join(" ") +
+    (facts === undefined ? "" : " " + JSON.stringify(facts));
   const issues: string[] = [];
 
   // 출력에 등장한 금액이 인용 안에 없으면 플래그
