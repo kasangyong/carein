@@ -20,8 +20,18 @@ const ALLOWED = ["image/png", "image/jpeg", "image/webp", "application/pdf"] as 
 type Allowed = (typeof ALLOWED)[number];
 
 export async function POST(req: Request) {
+  // 파일 업로드 전용 경로다. 다른 형식으로 오면 서버 오류가 아니라 요청 오류다.
+  let form: FormData;
   try {
-    const form = await req.formData();
+    form = await req.formData();
+  } catch {
+    return Response.json(
+      { error: "multipart/form-data 로 파일을 보내주세요." },
+      { status: 415 },
+    );
+  }
+
+  try {
     const file = form.get("file");
     const provider = (form.get("provider") as ProviderKind) || undefined;
     const docHint = (form.get("docHint") as string) || undefined;
