@@ -13,12 +13,15 @@ export function Gauge({
   after,
   beforeLabel,
   afterLabel,
+  flatReason,
 }: {
   horizonMonths: number;
   before: number | null;
   after: number | null;
   beforeLabel: string;
   afterLabel: string;
+  /** 두 막대가 같을 때 왜 같은지 — 사례마다 이유가 다르다 */
+  flatReason?: string;
 }) {
   const beforeMonths = before ?? horizonMonths;
   const afterMonths = after ?? horizonMonths;
@@ -74,7 +77,7 @@ export function Gauge({
         )}
         {gained === 0 && (
           <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
-            이 사례에서는 늘어나는 기간이 없습니다. 현금 지원 대상 제도가 없기 때문입니다
+            {flatReason ?? "이 사례에서는 늘어나는 기간이 없습니다"}
           </div>
         )}
       </div>

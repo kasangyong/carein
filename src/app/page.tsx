@@ -16,6 +16,24 @@ import type { AnalyzeInput } from "@/lib/engine/analyze";
 
 import { money } from "@/lib/format";
 
+/**
+ * 막대가 안 움직이는 이유는 사례마다 다르다. 뭉뚱그리면 서비스가 고장 난 것처럼 읽힌다.
+ * 실제로 늘어날 것이 없는 경우도 있고, 그게 정답인 경우도 있다.
+ */
+function flatReason(r: AnalyzeResult): string {
+  const withAmount = [...r.programs.eligible, ...r.programs.unknown].filter(
+    (m) => m.monthlyAmount !== null,
+  );
+  if (withAmount.length === 0 && r.valuedSupport.length === 0) {
+    return r.programs.eligible.length > 0
+      ? "해당하는 제도가 서비스·휴가 형태라 버티는 기간은 늘지 않습니다. 돈이 아니라 시간을 벌어주는 제도입니다"
+      : "소득·재산 기준을 넘어 해당하는 지원 제도가 없습니다";
+  }
+  return "이미 받고 계신 제도가 반영돼 있어 추가로 늘어나는 기간은 없습니다";
+}
+
+const CONFIDENCE_KO = { high: "높음", medium: "보통", low: "낮음" } as const;
+
 export default function Home() {
   const [presetId, setPresetId] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
@@ -211,6 +229,7 @@ export default function Home() {
                 after={result.simulation.recipientDepletionMonth}
                 beforeLabel={result.headline.survivalWithoutPrograms}
                 afterLabel={result.headline.survival}
+                flatReason={flatReason(result)}
               />
 
               <div
@@ -251,6 +270,41 @@ export default function Home() {
                   emphasis={result.headline.decisionReversal}
                 />
               </div>
+
+              {result.valuedSupport.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <div className="eyebrow" style={{ marginBottom: 8 }}>
+                    현금이 아니지만 돈이 되는 제도
+                  </div>
+                  <div className="card scroll-x">
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>제도</th>
+                          <th className="right" style={{ width: 110 }}>
+                            월 환산액
+                          </th>
+                          <th>계산 근거</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.valuedSupport.map((v) => (
+                          <tr key={v.programId}>
+                            <td style={{ width: "30%" }}>
+                              <strong>{v.name}</strong>{" "}
+                              <span className="chip" style={{ marginLeft: 6 }}>
+                                확신도 {CONFIDENCE_KO[v.confidence]}
+                              </span>
+                            </td>
+                            <td className="num right">{money(v.monthly)}</td>
+                            <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{v.basis}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
