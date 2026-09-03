@@ -327,7 +327,7 @@ export default function Home() {
 
             <Section
               title="퇴사할까, 다닐까"
-              note="월 단위 직관과 다년 계산이 자주 어긋납니다. 가정값은 전부 아래에 공개했고, 바꾸면 결과도 바뀝니다."
+              note="월 단위 직관과 다년 계산이 자주 어긋납니다. 계산에 쓴 가정은 값·확신도·근거까지 아래에 전부 공개했습니다."
               badge={<span className="badge badge-rule">규칙 계산</span>}
             >
               <DecisionPanel decision={result.decision} />

@@ -6,7 +6,7 @@
  *
  * 정직성 원칙
  *  - 추정이 들어가는 값은 전부 Assumption으로 노출한다. 숨기지 않는다.
- *  - 사용자가 모든 가정을 바꿀 수 있고, 바꾸면 결과가 즉시 재계산된다.
+ *  - 가정은 주입 가능하다. assumptions 를 넘기면 그 값으로 다시 계산한다.
  *  - 근거가 약한 가정은 confidence: "low"로 표시한다.
  */
 
@@ -29,7 +29,7 @@ export const DEFAULT_ASSUMPTIONS: Assumption[] = [
     label: "경력단절 후 복귀 임금 하락률",
     value: 0.15,
     unit: "rate",
-    basis: "단절 기간이 길수록 복귀 임금이 낮아진다는 일반적 경향에 기반한 보수적 가정. 개인차가 크므로 직접 조정하세요.",
+    basis: "단절 기간이 길수록 복귀 임금이 낮아진다는 일반적 경향에 기반한 보수적 가정. 개인차가 큰 값입니다.",
     confidence: "low",
     editable: true,
   },

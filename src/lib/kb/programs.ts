@@ -52,7 +52,7 @@ export interface Program {
   authority: string;
   /** 한 줄 요약 */
   summary: string;
-  /** 행정 용어를 걷어낸 요약. 쉬운 말 모드에서 대신 보여준다 */
+  /** 행정 용어를 걷어낸 요약. 현재 화면에서는 쓰지 않는다(쉬운 말 모드 제거) */
   plainSummary?: string;
   /** 지원 내용 원문에 가까운 서술 */
   benefit: string;

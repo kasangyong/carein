@@ -77,7 +77,10 @@ export default function Governance() {
                   k="판정 재현성"
                   v="같은 입력이면 항상 같은 출력. 판정 경로에 모델이 없으므로 모델 교체·버전 변경에도 결과가 바뀌지 않습니다."
                 />
-                <Row k="추론 위치" v="Claude API 또는 내부망 sLLM. 화면에서 전환 가능하며 판정 결과는 동일합니다." />
+                <Row
+                  k="추론 위치"
+                  v="공개 데모는 Gemini API. 내부망 sLLM(Ollama·exaone3.5)과 Claude API 로도 동작하며, 환경변수 한 줄로 전환합니다. 어느 쪽이든 판정 결과는 같습니다."
+                />
                 <Row k="저장" v="건강·소득 정보를 저장하지 않습니다. 세션 종료 시 폐기됩니다." />
                 <Row k="한계" v="문서 판독은 온프레미스 모드에서 정확도가 낮아 수동 입력으로 대체됩니다." />
               </tbody>
@@ -240,7 +243,10 @@ export default function Governance() {
         </Block>
 
         {/* 근거 추적 */}
-        <Block title="근거 추적" note="모든 판정과 금액은 출처를 갖습니다. 출처 없는 항목은 판정에 쓰지 않습니다.">
+        <Block
+          title="근거 추적"
+          note="모든 기준값은 출처를 갖습니다. 출처를 아직 확인하지 못한 제도는 요건 대조까지만 하고, 금액 합계에는 넣지 않습니다."
+        >
           <div className="card scroll-x">
             <table className="data">
               <thead>
@@ -272,7 +278,7 @@ export default function Governance() {
             <Metric label="기준값 연도" value={String(RATES_YEAR)} />
             <Metric label="제도 항목" value={`${PROGRAMS.length}개`} />
             <Metric label="출처 확인 완료" value={`${confirmed}개`} />
-            <Metric label="확인 필요" value={`${PROGRAMS.length - confirmed}개`} warn />
+            <Metric label="출처 확인 필요" value={`${PROGRAMS.length - confirmed}개`} warn />
           </div>
         </Block>
       </div>
