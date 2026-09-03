@@ -89,6 +89,37 @@ export const DEFAULT_ASSUMPTIONS: Assumption[] = [
   },
 ];
 
+/**
+ * 가정이 커질 때 어느 쪽에 유리해지는가.
+ *
+ * 점추정 하나만 내놓으면 그 숫자가 확정처럼 읽힌다. 확신도 "낮음" 가정이
+ * 여럿이므로 범위와 뒤집히는 지점을 함께 말해야 한다. 각 가정의 방향은
+ * 단조라서 양 끝만 계산하면 범위가 나온다.
+ */
+export const FAVORS_KEEP_WHEN_HIGHER: Record<string, boolean> = {
+  wageScarRate: true,
+  reemploymentDelayMonths: true,
+  pensionReplacementPerYear: true,
+  localHealthInsuranceMonthly: true,
+  wageGrowthRate: true,
+  careCostInflation: false,
+};
+
+/** 가정을 한쪽 극단으로 몰아 만든 사본 */
+export function assumptionsAtExtreme(
+  base: Assumption[],
+  bounds: Record<string, [number, number]>,
+  favor: "keep" | "quit",
+): Assumption[] {
+  return base.map((a) => {
+    const b = bounds[a.key];
+    const dir = FAVORS_KEEP_WHEN_HIGHER[a.key];
+    if (!b || dir === undefined || !a.editable) return a;
+    const high = favor === "keep" ? dir : !dir;
+    return { ...a, value: high ? b[1] : b[0] };
+  });
+}
+
 export interface DecisionInput {
   /** 본인 월 소득 (세후, 원) */
   monthlyIncome: number;

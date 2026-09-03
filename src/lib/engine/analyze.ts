@@ -12,7 +12,14 @@
 import { matchPrograms, type CareProfile, type MatchSummary } from "./match";
 import { calculateMonthlyCost, type CostResult, type CareSetting, type GradeOrNone, NO_GRADE } from "./cost";
 import { simulate, sensitivity, type SimulateResult } from "./simulate";
-import { evaluateQuitDecision, evaluateFamilyCaregiver, type DecisionResult } from "./decision";
+import {
+  evaluateQuitDecision,
+  evaluateFamilyCaregiver,
+  assumptionsAtExtreme,
+  DEFAULT_ASSUMPTIONS,
+  type DecisionResult,
+} from "./decision";
+import { ASSUMPTION_BOUNDS } from "./validate";
 import { valuate, type ValuedSupport } from "./valuation";
 import type { CopayTier } from "./rates";
 
@@ -31,6 +38,11 @@ export interface AnalyzeInput {
   setting: CareSetting;
   horizonYears?: number;
   careDurationMonths?: number;
+  /**
+   * 가정값 덮어쓰기 — key: value.
+   * 화면에서 조정한 값을 그대로 받는다. 여기 없는 항목은 기본값을 쓴다.
+   */
+  assumptionOverrides?: Record<string, number>;
   /** 비용 산출 세부 — 이용률, 한도 초과, 간병 유형, 급여화 대상 여부 */
   costDetail?: {
     utilization?: number;
@@ -48,6 +60,8 @@ export interface AnalyzeResult {
   simulationWithoutPrograms: SimulateResult;
   /** 현금이 아닌 제도의 월 환산액과 그 근거 */
   valuedSupport: ValuedSupport[];
+  /** 가정을 양 끝으로 몰았을 때의 손익 범위 */
+  decisionRange: { low: number; high: number; flips: boolean };
   sensitivity: ReturnType<typeof sensitivity>;
   decision: DecisionResult;
   familyCaregiver: ReturnType<typeof evaluateFamilyCaregiver>;
@@ -212,7 +226,21 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     return familyCost;
   })();
 
+  /**
+   * 화면에서 조정한 가정을 반영한다. 조정 가능하다고 적어놓고 반영하지 않으면
+   * 그건 안내가 아니라 거짓말이다.
+   */
+  const overrides = input.assumptionOverrides;
+  const assumptions = overrides
+    ? DEFAULT_ASSUMPTIONS.map((a) =>
+        a.editable && typeof overrides[a.key] === "number"
+          ? { ...a, value: overrides[a.key] }
+          : a,
+      )
+    : DEFAULT_ASSUMPTIONS;
+
   const decision = evaluateQuitDecision({
+    assumptions,
     monthlyIncome: input.finances.caregiverMonthlyIncome,
     tenureYears: input.finances.caregiverTenureYears,
     age: input.finances.caregiverAge,
@@ -225,6 +253,35 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     programSupportIfQuitting: programs.countableMonthlyTotal,
   });
 
+  /**
+   * 가정을 양 끝으로 몰아 결론이 어디까지 흔들리는지 본다.
+   * 범위 안에서 결론이 뒤집히면 그 사실을 반드시 말해야 한다.
+   */
+  const decisionArgs = {
+    monthlyIncome: input.finances.caregiverMonthlyIncome,
+    tenureYears: input.finances.caregiverTenureYears,
+    age: input.finances.caregiverAge,
+    careCostIfWorking: costWithoutPrograms.monthlyTotal,
+    careCostIfQuitting: costIfQuitting,
+    careDurationMonths,
+    horizonYears,
+    programSupportIfQuitting: programs.countableMonthlyTotal,
+  };
+  const quitEnd = evaluateQuitDecision({
+    ...decisionArgs,
+    assumptions: assumptionsAtExtreme(assumptions, ASSUMPTION_BOUNDS, "quit"),
+  });
+  const keepEnd = evaluateQuitDecision({
+    ...decisionArgs,
+    assumptions: assumptionsAtExtreme(assumptions, ASSUMPTION_BOUNDS, "keep"),
+  });
+  const decisionRange = {
+    low: Math.min(quitEnd.totalDelta, keepEnd.totalDelta),
+    high: Math.max(quitEnd.totalDelta, keepEnd.totalDelta),
+    /** 가정 범위 안에서 결론이 뒤집히는가 */
+    flips: quitEnd.recommendation !== keepEnd.recommendation,
+  };
+
   const familyCaregiver = evaluateFamilyCaregiver({
     expectedMonthlyPay: 900_000,
     careDurationMonths,
@@ -236,6 +293,7 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     simulation,
     simulationWithoutPrograms,
     valuedSupport,
+    decisionRange,
     sensitivity: sens,
     decision,
     familyCaregiver,

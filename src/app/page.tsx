@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { PRESETS } from "@/lib/presets";
 import type { AnalyzeResult } from "@/lib/engine/analyze";
@@ -59,8 +59,14 @@ export default function Home() {
   const [mode, setMode] = useState<"preset" | "custom">("preset");
   const [horizonYears, setHorizonYears] = useState(10);
   const [usedInput, setUsedInput] = useState<AnalyzeInput | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  /**
+   * 가정 재계산은 이 ref 를 기준으로 한다.
+   * usedInput 상태를 effect 의존성에 넣으면 post 가 그 값을 다시 세팅해 무한 루프가 된다.
+   */
+  const inputRef = useRef<AnalyzeInput | null>(null);
 
-  const post = useCallback(async (body: Record<string, unknown>) => {
+  const post = useCallback(async (body: Record<string, unknown>, scroll = true) => {
     setLoading(true);
     setError(null);
     try {
@@ -73,16 +79,33 @@ export default function Home() {
       if (!res.ok) throw new Error(json.error ?? "분석에 실패했습니다.");
       setResult(json.result as AnalyzeResult);
       setUsedInput((json.input as AnalyzeInput) ?? null);
+      inputRef.current = (json.input as AnalyzeInput) ?? null;
       setHorizonYears((json.input as AnalyzeInput)?.horizonYears ?? 10);
-      requestAnimationFrame(() =>
-        document.getElementById("result")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      );
+      if (scroll) {
+        requestAnimationFrame(() =>
+          document.getElementById("result")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "분석에 실패했습니다.");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * 가정값을 바꾸면 다시 계산한다. 슬라이더는 자주 움직이므로 멈춘 뒤 한 번만 보낸다.
+   * 화면이 튀지 않게 스크롤은 하지 않는다.
+   */
+  useEffect(() => {
+    if (Object.keys(overrides).length === 0) return;
+    const base = inputRef.current;
+    if (!base) return;
+    const t = setTimeout(() => {
+      void post({ input: { ...base, assumptionOverrides: overrides } }, false);
+    }, 320);
+    return () => clearTimeout(t);
+  }, [overrides, post]);
 
   // 공유 링크로 들어온 경우 — 서버 저장 없이 링크에 담긴 사례를 복원한다.
   // 상태 변경은 fetch 이후에 한다. 렌더 중 동기 setState 는 하이드레이션을 깨뜨린다.
@@ -97,11 +120,13 @@ export default function Home() {
 
   function run(id: string) {
     setPresetId(id);
+    setOverrides({});
     void post({ presetId: id });
   }
 
   function runCustom(input: AnalyzeInput) {
     setPresetId(null);
+    setOverrides({});
     void post({ input });
   }
 
@@ -345,10 +370,20 @@ export default function Home() {
 
             <Section
               title="퇴사할까, 다닐까"
-              note="월 단위 직관과 다년 계산이 자주 어긋납니다. 계산에 쓴 가정은 값·확신도·근거까지 아래에 전부 공개했습니다."
+              note="월 단위 직관과 다년 계산이 자주 어긋납니다. 계산에 쓴 가정은 값·확신도·근거까지 전부 공개했고, 아래에서 직접 바꿔 보실 수 있습니다."
               badge={<span className="badge badge-rule">규칙 계산</span>}
             >
-              <DecisionPanel decision={result.decision} />
+              <DecisionPanel
+                decision={result.decision}
+                range={result.decisionRange}
+                overrides={overrides}
+                onOverride={(key, value) => setOverrides((o) => ({ ...o, [key]: value }))}
+                onReset={() => {
+                  setOverrides({});
+                  const base = inputRef.current;
+                  if (base) void post({ input: { ...base, assumptionOverrides: undefined } }, false);
+                }}
+              />
             </Section>
 
             <Section
