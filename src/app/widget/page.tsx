@@ -73,6 +73,11 @@ export default function Widget() {
             ? `${Math.floor(h.monthsGainedByPrograms / 12)}년 `
             : ""}
           {h.monthsGainedByPrograms % 12}개월 더 버틸 수 있습니다
+          {h.gainDriver === "pilot" && (
+            <span style={{ display: "block", fontWeight: 400, opacity: 0.75 }}>
+              대부분 간병비 급여화 대상 확인에서 나옵니다
+            </span>
+          )}
         </p>
       )}
 

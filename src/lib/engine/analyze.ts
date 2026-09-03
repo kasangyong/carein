@@ -65,7 +65,14 @@ export interface AnalyzeResult {
     /** 퇴사 결정이 직관과 뒤집혔는가 */
     decisionReversal: boolean;
     survivalWithoutPrograms: string;
+    /** 늘어난 총 개월 */
     monthsGainedByPrograms: number;
+    /** 그중 간병비 급여화 대상 확인에서 나온 몫 */
+    monthsGainedByPilot: number;
+    /** 그중 제도 신청에서 나온 몫 */
+    monthsGainedBySupport: number;
+    /** 늘어난 기간의 주된 원인 */
+    gainDriver: "pilot" | "support" | "both" | "none";
   };
 }
 
@@ -160,12 +167,32 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     .filter((m) => m.program.amountKind !== "cap")
     .reduce((sum, m) => sum + (m.monthlyAmount ?? 0), 0);
   const bestCaseSupport = costReduction + incomeSupport;
+  const pilotFromYear =
+    input.setting === "hospital" ? 2026 : simInput.pilotEligibleFromYear;
+  /**
+   * 늘어난 기간의 원인을 갈라 본다.
+   *
+   * 요양병원 사례에서 막대가 2년 → 9년 9개월로 벌어지는데, 그 대부분은
+   * 제도 신청이 아니라 간병비 급여화 대상 확인에서 나온다. 헤드라인이
+   * "놓친 제도 5개 · 연 36만원" 옆에 93개월을 붙이면 원인을 잘못 가리킨다.
+   * 연 36만원으로 93개월이 늘어날 수는 없다.
+   */
+  const pilotOnly = simulate({
+    ...simInput,
+    programSupportMonthly: 0,
+    pilotEligibleFromYear: pilotFromYear,
+  });
   const simulation = simulate({
     ...simInput,
     programSupportMonthly: bestCaseSupport,
-    pilotEligibleFromYear: input.setting === "hospital" ? 2026 : simInput.pilotEligibleFromYear,
+    pilotEligibleFromYear: pilotFromYear,
   });
   const simulationWithoutPrograms = asIs;
+
+  const depletion = (r: SimulateResult) =>
+    r.recipientDepletionMonth ?? horizonYears * 12;
+  const monthsGainedByPilot = depletion(pilotOnly) - depletion(asIs);
+  const monthsGainedBySupport = depletion(simulation) - depletion(pilotOnly);
   const sens = sensitivity(simInput);
 
   // 4. 의사결정
@@ -220,9 +247,17 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
       monthlyBurdenBefore: costWithoutPrograms.monthlyTotal,
       decisionReversal: decision.isReversal,
       survivalWithoutPrograms: simulationWithoutPrograms.survivalLabel,
-      monthsGainedByPrograms:
-        (simulation.recipientDepletionMonth ?? horizonYears * 12) -
-        (simulationWithoutPrograms.recipientDepletionMonth ?? horizonYears * 12),
+      monthsGainedByPrograms: monthsGainedByPilot + monthsGainedBySupport,
+      monthsGainedByPilot,
+      monthsGainedBySupport,
+      gainDriver:
+        monthsGainedByPilot + monthsGainedBySupport <= 0
+          ? "none"
+          : monthsGainedByPilot >= (monthsGainedByPilot + monthsGainedBySupport) * 0.7
+            ? "pilot"
+            : monthsGainedBySupport >= (monthsGainedByPilot + monthsGainedBySupport) * 0.7
+              ? "support"
+              : "both",
     },
   };
 }

@@ -14,6 +14,7 @@ export function Gauge({
   beforeLabel,
   afterLabel,
   flatReason,
+  gainSource,
 }: {
   horizonMonths: number;
   before: number | null;
@@ -22,6 +23,8 @@ export function Gauge({
   afterLabel: string;
   /** 두 막대가 같을 때 왜 같은지 — 사례마다 이유가 다르다 */
   flatReason?: string;
+  /** 늘어난 기간이 어디서 나왔는지 — 원인을 안 적으면 옆의 지표로 오귀인된다 */
+  gainSource?: string;
 }) {
   const beforeMonths = before ?? horizonMonths;
   const afterMonths = after ?? horizonMonths;
@@ -67,12 +70,19 @@ export function Gauge({
           ))}
         </div>
         {gained > 0 && (
-          <div
-            className="num"
-            style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}
-          >
-            {Math.floor(gained / 12) > 0 ? `${Math.floor(gained / 12)}년 ` : ""}
-            {gained % 12}개월 더 버틸 수 있습니다
+          <div style={{ textAlign: "right" }}>
+            <div
+              className="num"
+              style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}
+            >
+              {Math.floor(gained / 12) > 0 ? `${Math.floor(gained / 12)}년 ` : ""}
+              {gained % 12}개월 더 버틸 수 있습니다
+            </div>
+            {gainSource && (
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }}>
+                {gainSource}
+              </div>
+            )}
           </div>
         )}
         {gained === 0 && (

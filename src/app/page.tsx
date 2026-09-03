@@ -34,6 +34,23 @@ function flatReason(r: AnalyzeResult): string {
 
 const CONFIDENCE_KO = { high: "높음", medium: "보통", low: "낮음" } as const;
 
+/**
+ * 늘어난 기간이 어디서 나왔는지 한 줄로 밝힌다.
+ * 이 줄이 없으면 옆의 "놓치고 있던 제도 N개 · 연 36만원" 이 원인처럼 읽힌다.
+ * 연 36만원으로 93개월이 늘어날 수는 없다.
+ */
+function gainSource(r: AnalyzeResult): string | undefined {
+  const { monthsGainedByPilot: pilot, monthsGainedBySupport: sup, gainDriver } = r.headline;
+  const m = (n: number) =>
+    Math.floor(n / 12) > 0 ? `${Math.floor(n / 12)}년 ${n % 12}개월` : `${n}개월`;
+  if (gainDriver === "pilot")
+    return `대부분(${m(pilot)})은 간병비 급여화 대상 확인에서 나옵니다`;
+  if (gainDriver === "support") return `제도 신청에서 ${m(sup)}`;
+  if (gainDriver === "both")
+    return `급여화 확인 ${m(pilot)} + 제도 신청 ${m(sup)}`;
+  return undefined;
+}
+
 export default function Home() {
   const [presetId, setPresetId] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
@@ -230,6 +247,7 @@ export default function Home() {
                 beforeLabel={result.headline.survivalWithoutPrograms}
                 afterLabel={result.headline.survival}
                 flatReason={flatReason(result)}
+                gainSource={gainSource(result)}
               />
 
               <div
