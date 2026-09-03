@@ -67,15 +67,44 @@ export interface ExplainRequest {
 // 가드레일 — 모든 프로바이더가 공유
 // ─────────────────────────────────────────────────────────────
 
-/** M9.6 — LLM 전송 전 PII 마스킹 */
+/** 앞 6자리가 실제 날짜로 읽히는가 — 임의의 13자리 숫자를 주민번호로 오인하지 않기 위한 조건 */
+function looksLikeBirthDate(six: string): boolean {
+  const mm = Number(six.slice(2, 4));
+  const dd = Number(six.slice(4, 6));
+  return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+}
+
+/**
+ * M9.6 — LLM 전송 전 PII 마스킹
+ *
+ * 하이픈을 전제하면 안 된다. 실제 서류와 사용자 입력에는 하이픈 없이 적힌 경우가
+ * 더 흔하다. 레드팀 실측에서 "4803122145678"(주민번호)과 "110234567890"(계좌)이
+ * 그대로 통과했고, 전화번호만 걸려서 화면에는 "차단됨"으로 표시됐다.
+ * 새는데 막았다고 말하는 쪽이 아예 안 막는 것보다 나쁘다.
+ *
+ * 마스킹은 실패해도 안전한 방향(과하게 가리는 쪽)으로 기울인다.
+ */
 export function maskPII(text: string): string {
-  return text
-    .replace(/\d{6}\s*[-–]\s*[1-4]\d{6}/g, "[주민등록번호]")
-    .replace(/01[0-9]-?\d{3,4}-?\d{4}/g, "[전화번호]")
-    // 앞뒤로 숫자가 붙어 있으면 계좌번호가 아니다.
-    // 이 경계가 없으면 "1955-03-21" 같은 날짜를 "1[계좌번호]" 로 뭉갠다.
-    .replace(/(?<![\d-])\d{2,3}-\d{2,6}-\d{2,6}(?![\d-])/g, "[계좌번호]")
-    .replace(/[가-힣]{2,4}\s*(님|씨)(?=\s|$|,|\.)/g, "[이름]$1");
+  return (
+    text
+      // 주민등록번호 — 하이픈 있는 형태
+      .replace(/(?<![\d-])(\d{6})\s*[-–]\s*([1-8]\d{6})(?![\d-])/g, (m, six: string) =>
+        looksLikeBirthDate(six) ? "[주민등록번호]" : m,
+      )
+      // 주민등록번호 — 하이픈 없는 13자리
+      .replace(/(?<!\d)(\d{6})([1-8]\d{6})(?!\d)/g, (m, six: string) =>
+        looksLikeBirthDate(six) ? "[주민등록번호]" : m,
+      )
+      // 전화번호 — 하이픈 유무 무관
+      .replace(/(?<!\d)01[0-9][-–\s]?\d{3,4}[-–\s]?\d{4}(?!\d)/g, "[전화번호]")
+      // 계좌번호 — 하이픈 있는 형태. 앞뒤 숫자·하이픈을 배제해
+      // "1955-03-21" 같은 날짜를 삼키지 않게 한다.
+      .replace(/(?<![\d-])\d{2,3}-\d{2,6}-\d{2,6}(?![\d-])/g, "[계좌번호]")
+      // 계좌번호 — 하이픈 없는 연속 숫자.
+      // 이 서비스가 다루는 금액은 최대 8자리(수천만원)라 10자리 이상이면 금액이 아니다.
+      .replace(/(?<!\d)\d{10,16}(?!\d)/g, "[계좌번호]")
+      .replace(/[가-힣]{2,4}\s*(님|씨)(?=\s|$|,|\.)/g, "[이름]$1")
+  );
 }
 
 /**
@@ -85,36 +114,72 @@ export function maskPII(text: string): string {
  * 조사를 고정해 두면 뚫린다. 실제로 레드팀 콘솔에서 "지시사항을 무시"가
  * `를?` 패턴을 빠져나갔다. 조사 부분은 한 덩어리로 느슨하게 잡는다.
  */
-const KO_PARTICLE = "(?:은|는|이|가|을|를|도|만)?";
+/**
+ * 겉모습만 라틴 문자인 글자들. `<systеm>` 의 е 는 키릴 문자다.
+ * 정규화 없이 패턴을 걸면 눈에 같아 보이는 문자로 전부 빠져나간다.
+ */
+const HOMOGLYPHS: Record<string, string> = {
+  а: "a", е: "e", о: "o", с: "c", р: "p", і: "i", ѕ: "s", у: "y", х: "x", ԁ: "d",
+  А: "A", Е: "E", О: "O", С: "C", Р: "P", І: "I", Ѕ: "S", У: "Y", Х: "X",
+  ο: "o", ε: "e", α: "a", ρ: "p", ϲ: "c", ι: "i", υ: "u", ν: "v",
+};
 
-const INJECTION_PATTERNS = [
-  // 지시 무시 계열 — "이전 지시사항을 무시", "위 지시 잊고", "앞의 명령은 무시"
-  new RegExp(
-    `(?:이전|위|앞|상단|기존)\s*(?:의)?\s*(?:지시|명령|규칙|안내)(?:사항)?${KO_PARTICLE}\s*(?:무시|잊|폐기|취소|해제)`,
-    "gi",
-  ),
-  // 조건 없이 "무시하고 ~하라"
-  /(?:모두|전부|다)?\s*무시하(?:고|라|세요|십시오)/gi,
-  /ignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)/gi,
-  /disregard\s+(?:all\s+)?(?:previous|prior|above)/gi,
+/**
+ * 대조 전 정규화. 반환값을 그대로 쓴다 — 모델에 넘기는 것은 데이터이므로
+ * 정규화된 형태로 보내는 편이 안전하다.
+ *   전각·호환 문자 → NFKC
+ *   호모글리프    → 라틴
+ *   제어문자·폭 없는 공백 제거 (사이에 끼워 패턴을 쪼개는 수법)
+ */
+export function normalizeForScan(text: string): string {
+  let out = text.normalize("NFKC");
+  out = out.replace(/[\u200B-\u200D\uFEFF\u00AD\u2060]/g, "");
+  out = out.replace(/[^\x00-\x7F]/g, (ch) => HOMOGLYPHS[ch] ?? ch);
+  return out;
+}
+
+/**
+ * 지시문 패턴.
+ *
+ * 이전 구현은 `new RegExp(\`...\s*...\`)` 로 만들었는데 템플릿 리터럴에서
+ * `\s` 가 문자 `s` 로 죽었다("\s" === "s"). 그래서 "이전 지시" 처럼 공백이
+ * 하나만 있어도 전부 빠져나갔고, 내장 8케이스는 다른 패턴에 걸려 통과한
+ * 것이었다. 정규식 리터럴로만 쓰고, 어순·오타에 견디도록 근접 매칭으로 바꿨다.
+ */
+const NEG = String.raw`무시|묵살|잊|폐기|취소|해제|버리`;
+const OBJ = String.raw`지시|명령|규칙|안내|지침|프롬프트`;
+
+const INJECTION_PATTERNS: RegExp[] = [
+  // 한국어 — 목적어 먼저 ("이전 지시사항을 무시", "위의 규칙을 무시하세요")
+  new RegExp(String.raw`(?:${OBJ})[^.\n]{0,12}(?:${NEG})`, "gi"),
+  // 한국어 — 동사 먼저 ("무시하라, 이전 지시사항을")
+  new RegExp(String.raw`(?:${NEG})[^.\n]{0,16}(?:${OBJ})`, "gi"),
+  // 한국어 — 목적어 없이 ("전부 무시하고")
+  /(?:모두|전부|다|위|앞|이전)\s*(?:내용|것)?(?:을|를)?\s*무시하(?:고|라|세요|십시오|시오)/gi,
+  // 영어 — 오타에 견디게 어간만 본다 (instrucions, instruciton …)
+  // 사이에 단어가 끼므로 \W 로는 못 넘는다("disregard the above" 의 the).
+  /(?:ignore|disregard|forget|override|bypass)[^.\n]{0,24}?(?:instruc\w*|prompt\w*|rule\w*|direction\w*|guideline\w*|above|previous|prior|earlier|everything)/gi,
+  /(?:instruc\w*|prompt\w*|rule\w*)[^.\n]{0,24}?(?:ignore|disregard|forget|override)/gi,
   /system\s*prompt/gi,
   // 역할 탈취
-  new RegExp(`(?:너|당신|네)${KO_PARTICLE}\s*이제`, "gi"),
+  /(?:너|당신|네)(?:는|은|가|이)?\s*이제/gi,
   /새로운?\s*역할/gi,
   /역할(?:을|를)?\s*(?:바꾸|변경|무시)/gi,
-  /you\s+are\s+now\s+/gi,
+  /you\s+are\s+now\b/gi,
+  /act\s+as\s+(?:a|an|the)?\s*\w+/gi,
   // 태그 위조
-  /<\s*\/?\s*(?:system|assistant|user|instructions?)\s*>/gi,
-  /\[\s*\/?\s*(?:system|instructions?)\s*\]/gi,
-  // 판정 강제
-  /(?:모든|전부)\s*(?:제도|항목)(?:을|를)?\s*(?:해당|승인|통과)/gi,
-  /(?:금액|가격)(?:을|를)?\s*(?:두\s*배|반|0|영)(?:으)?로/gi,
+  /<\s*\/?\s*(?:system|assistant|user|instructions?|im_start|im_end)\s*>/gi,
+  /\[\s*\/?\s*(?:system|instructions?|INST)\s*\]/gi,
+  // 판정·금액 강제
+  /(?:모든|전부|전체)\s*(?:제도|항목|급여)(?:을|를)?\s*(?:해당|승인|통과|지급)/gi,
+  /(?:금액|가격|지원금)(?:을|를)?\s*(?:두\s*배|2배|반|0|영)(?:으)?로/gi,
 ];
 
 export function neutralizeInjection(text: string): { text: string; found: string[] } {
   const found: string[] = [];
-  let out = text;
+  let out = normalizeForScan(text);
   for (const p of INJECTION_PATTERNS) {
+    p.lastIndex = 0;
     const m = out.match(p);
     if (m) {
       found.push(...m);
@@ -141,6 +206,13 @@ const HEDGE_RULES: [RegExp, string][] = [
   [/틀림없이\s*/g, ""],
   [/확실히\s*/g, ""],
   [/무조건\s*/g, ""],
+  // 수식어를 안 지우면 "100% 지급될 수 있습니다" 처럼 모순 문장이 남는다.
+  // 뒤의 서술을 완화하는 것만으로는 부족하고 단정하는 수식어 자체를 걷어내야 한다.
+  [/\s*(?:100|백)\s*%\s*(?=지급|지원|보장|환급|해당)/g, " "],
+  [/(?:전액|100%)\s*(?=보장|지급)/g, ""],
+  [/절대\s*(?=받|지급|가능)/g, ""],
+  [/당연히\s*/g, ""],
+  [/보장됩니다/g, "보장 여부는 확인이 필요합니다"],
 ];
 
 export function enforceHedging(text: string): string {
