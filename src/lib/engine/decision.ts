@@ -164,6 +164,20 @@ export function evaluateQuitDecision(input: DecisionInput): DecisionResult {
   let keepTotal = 0;
   let quitTotal = 0;
 
+  /**
+   * 손익 분해용 누적기.
+   *
+   * 예전에는 breakdown 을 루프와 무관하게 고정값으로 다시 계산했다. 그래서
+   * 화면에 총액 7,845만원과 표 합계 6,099만원이 함께 떠서 1,746만원이 어긋났다.
+   * 상승률과 재취업 지연이 총액에는 들어가고 표에는 안 들어갔기 때문이다.
+   * 같은 항목을 두 번 계산하면 반드시 갈라지므로, 루프에서 직접 모은다.
+   */
+  let incomeGapNoWork = 0;
+  let incomeGapAfterReturn = 0;
+  let careSaved = 0;
+  let supportTotal = 0;
+  let healthTotal = 0;
+
   for (let y = 0; y < horizonYears; y++) {
     const infl = Math.pow(1 + careInflation, y);
     const growth = Math.pow(1 + wageGrowth, y);
@@ -206,6 +220,12 @@ export function evaluateQuitDecision(input: DecisionInput): DecisionResult {
     keepTotal += keepNet;
     quitTotal += quitNet;
 
+    if (quitIncome === 0) incomeGapNoWork += keepIncome - quitIncome;
+    else incomeGapAfterReturn += keepIncome - quitIncome;
+    careSaved += keepCare - quitCare;
+    supportTotal += support;
+    healthTotal += healthCost;
+
     yearly.push({
       year: y + 1,
       keepJob: { income: keepIncome, careCost: keepCare, net: keepNet },
@@ -239,29 +259,39 @@ export function evaluateQuitDecision(input: DecisionInput): DecisionResult {
   const isReversal =
     recommendation !== "close" && recommendation !== naiveRecommendation;
 
+  /**
+   * 합이 totalDelta 와 정확히 같아야 한다.
+   *   totalDelta = Σ(keepNet − quitNet) + pensionLoss + severanceLoss
+   *              = 소득차 − 돌봄비절약 − 제도지원 + 건보료 + 연금 + 퇴직금
+   */
   const breakdown = [
     {
-      label: "돌봄 기간 중 소득 차이",
-      amount: monthlyIncome * careDurationMonths,
-      note: "퇴사 시 이 기간 소득이 없습니다",
+      label: "무소득 기간 소득 손실",
+      amount: incomeGapNoWork,
+      note: `퇴사 후 재취업까지 ${Math.round((careDurationMonths + delayMonths) / 12 * 10) / 10}년간 소득이 없습니다 (임금 상승률 반영)`,
+    },
+    {
+      label: "복귀 후 임금 하락 누적",
+      amount: incomeGapAfterReturn,
+      note: `복귀 임금이 ${(scar * 100).toFixed(0)}% 낮아진다고 가정했을 때의 잔여 기간 누적`,
     },
     {
       label: "돌봄비 절약분",
-      amount: -(careCostIfWorking - careCostIfQuitting) * careDurationMonths,
-      note: "직접 돌보면 줄어드는 지출",
+      amount: -careSaved,
+      note: "직접 돌보면 줄어드는 지출 (돌봄비 상승률 반영)",
     },
     {
       label: "퇴사 시 받는 제도 지원",
-      amount: -programSupportIfQuitting * careDurationMonths,
+      amount: -supportTotal,
       note:
-        programSupportIfQuitting > 0
+        supportTotal > 0
           ? "해당 판정된 제도만 반영했습니다"
           : "이 사례에서 해당하는 현금 지원 제도가 없습니다",
     },
     {
-      label: "복귀 후 임금 하락 누적",
-      amount: monthlyIncome * scar * 12 * Math.max(0, horizonYears - careYears),
-      note: `복귀 임금이 ${(scar * 100).toFixed(0)}% 낮아진다고 가정했을 때`,
+      label: "지역가입 건강보험료",
+      amount: healthTotal,
+      note: "직장가입 자격 상실 시 발생",
     },
     {
       label: "국민연금 수령액 감소",
@@ -272,11 +302,6 @@ export function evaluateQuitDecision(input: DecisionInput): DecisionResult {
       label: "퇴직금 적립 중단",
       amount: severanceLoss,
       note: `근속 ${tenureYears}년에서 중단`,
-    },
-    {
-      label: "지역가입 건강보험료",
-      amount: localHealth * Math.min(careDurationMonths + delayMonths, horizonYears * 12),
-      note: "직장가입 자격 상실 시 발생",
     },
   ];
 
