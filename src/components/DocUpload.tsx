@@ -91,9 +91,59 @@ export function DocUpload({
         <p style={{ margin: 0, fontSize: 13.5, color: "var(--ink-2)" }}>
           장기요양 등급판정 통지서나 진단서를 올리면 아래 항목을 채웁니다.
         </p>
-        <p style={{ margin: "4px 0 12px", fontSize: 12, color: "var(--ink-3)" }}>
-          PNG · JPEG · WebP · PDF · 8MB 이하 · 저장하지 않습니다
+        <p style={{ margin: "4px 0 10px", fontSize: 12, color: "var(--ink-3)" }}>
+          PNG · JPEG · WebP · PDF · 8MB 이하
         </p>
+
+        {/*
+          업로드하면 파일이 외부 모델로 나간다. "저장하지 않습니다" 만 적으면
+          외부 전송 사실이 가려진다. 올리기 전에 어디로 가고 무엇이 남는지 밝힌다.
+        */}
+        <details
+          style={{
+            textAlign: "left",
+            border: "1px solid var(--line)",
+            borderRadius: 2,
+            padding: "9px 12px",
+            marginBottom: 12,
+            background: "var(--surface)",
+          }}
+        >
+          <summary style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 550 }}>
+            올리기 전에 — 이 파일이 어디로 가나요
+          </summary>
+          <ul
+            style={{
+              margin: "9px 0 0",
+              paddingLeft: 17,
+              fontSize: 12.5,
+              lineHeight: 1.85,
+              color: "var(--ink-2)",
+            }}
+          >
+            <li>
+              판독을 위해 <strong>외부 AI 모델(Google Gemini)로 전송됩니다.</strong> 공개 데모라
+              그렇습니다.
+            </li>
+            <li>
+              전송 전에 주민등록번호·연락처·계좌번호·이름을 규칙으로 마스킹합니다. 다만
+              <strong> 서류 이미지 자체는 그대로 전송됩니다.</strong>
+            </li>
+            <li>서버·데이터베이스에 파일을 저장하지 않습니다. 판독 후 메모리에서 버립니다.</li>
+            <li>
+              판독 결과는 신뢰도 임계치 미달 항목을 반영하지 않고 따로 보고합니다. 값은 직접
+              고칠 수 있습니다.
+            </li>
+            <li>
+              <strong>업로드하지 않고 직접 입력해도 모든 기능이 동작합니다.</strong> 민감한
+              서류라면 아래 항목을 손으로 채우시는 편을 권합니다.
+            </li>
+            <li>
+              금융기관 내부망 배포 시에는 <span className="num">AI_PROVIDER=onprem</span> 으로
+              전환해 외부 전송을 없앨 수 있고, 판정 결과는 동일합니다.
+            </li>
+          </ul>
+        </details>
         <button
           onClick={() => inputRef.current?.click()}
           disabled={busy}
