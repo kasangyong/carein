@@ -245,6 +245,18 @@ table.data th.right {
 
 .scroll-x {
   overflow-x: auto;
+  max-width: 100%;
+}
+
+/*
+ * 그리드·플렉스 자식은 기본값이 min-width: auto 다. 그래서 표가 든 칸이
+ * 내용 최소폭까지 벌어지고, 안쪽 .scroll-x 는 스크롤할 여지를 잃는다.
+ * 375px 화면에서 문서 폭이 450px 이 되어 페이지 전체가 가로로 밀렸다.
+ * 칸이 줄어들 수 있게 해주면 스크롤이 표 안에서 일어난다.
+ */
+.shell > *,
+.shell > * > * {
+  min-width: 0;
 }
 
 /* ── 계산 전개 ── */
