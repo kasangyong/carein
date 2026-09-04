@@ -44,7 +44,7 @@ function gainSource(r: AnalyzeResult): string | undefined {
   const m = (n: number) =>
     Math.floor(n / 12) > 0 ? `${Math.floor(n / 12)}년 ${n % 12}개월` : `${n}개월`;
   if (gainDriver === "pilot")
-    return `대부분(${m(pilot)})은 간병비 급여화 대상 확인에서 나옵니다`;
+    return `대부분(${m(pilot)})은 간병비 급여화 대상 확인에서 나옵니다 (제도 확정 전)`;
   if (gainDriver === "support") return `제도 신청에서 ${m(sup)}`;
   if (gainDriver === "both")
     return `급여화 확인 ${m(pilot)} + 제도 신청 ${m(sup)}`;
@@ -241,6 +241,23 @@ export default function Home() {
 
       {result && (
         <main id="result" style={{ paddingBottom: 96 }}>
+          {/*
+            사례를 본 뒤 "직접 입력하기" 탭으로 옮겨도 결과는 남는다. 그러면 화면의
+            숫자가 지금 폼에 있는 값에서 나온 것처럼 읽힌다. 어느 입력에서 나온
+            결과인지 항상 밝힌다.
+          */}
+          <div className="shell" style={{ paddingTop: 14 }}>
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-3)" }}>
+              아래 결과는{" "}
+              <strong style={{ color: "var(--ink-2)" }}>
+                {presetId
+                  ? `"${PRESETS.find((p) => p.id === presetId)?.title ?? presetId}" 사례`
+                  : "직접 입력한 값"}
+              </strong>
+              을 기준으로 계산했습니다.
+              {presetId && mode === "custom" && " 아래 폼의 값이 아닙니다."}
+            </p>
+          </div>
           {/* ── 시그니처: 버티는 기간 ── */}
           <section
             style={{
@@ -293,7 +310,13 @@ export default function Home() {
                 <Stat
                   label="월 실부담"
                   value={money(result.headline.monthlyBurden)}
-                  sub={`지금 그대로면 ${money(result.headline.monthlyBurdenBefore)}`}
+                  sub={
+                    result.headline.monthlyBurdenBefore > result.headline.monthlyBurden
+                      ? `제도 지원 ${money(
+                          result.headline.monthlyBurdenBefore - result.headline.monthlyBurden,
+                        )} 차감 후`
+                      : "확인된 제도만 반영"
+                  }
                 />
                 <Stat
                   label="10년 총 돌봄비"
@@ -313,6 +336,67 @@ export default function Home() {
                   emphasis={result.headline.decisionReversal}
                 />
               </div>
+
+              {result.pilotScenario && (
+                <div
+                  className="card"
+                  style={{
+                    marginTop: 18,
+                    padding: "14px 16px",
+                    borderLeft: "3px solid var(--warn)",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span className="eyebrow" style={{ margin: 0 }}>
+                      가장 큰 변수 — 간병비 급여화
+                    </span>
+                    <span
+                      className="chip"
+                      style={{ color: "var(--warn)", borderColor: "var(--warn)" }}
+                    >
+                      {result.pilotScenario.status}
+                    </span>
+                  </div>
+                  <p style={{ margin: "9px 0 0", fontSize: 14, lineHeight: 1.75 }}>
+                    지금은 간병비를 전액 부담하고 있어 월{" "}
+                    <strong className="num">{money(result.pilotScenario.monthlyNow)}</strong>
+                    입니다. 급여화 대상으로 <strong>확인되면</strong> 월{" "}
+                    <strong className="num" style={{ color: "var(--accent)" }}>
+                      {money(result.pilotScenario.monthlyIfApplies)}
+                    </strong>
+                    까지 내려갑니다. 위 막대에서 늘어난 기간의 대부분이 여기서 나옵니다.
+                  </p>
+                  <p
+                    className="eyebrow"
+                    style={{ margin: "13px 0 6px" }}
+                  >
+                    대상이 되려면 모두 충족해야 합니다
+                  </p>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: 18,
+                      fontSize: 13,
+                      lineHeight: 1.8,
+                      color: "var(--ink-2)",
+                    }}
+                  >
+                    {result.pilotScenario.conditions.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                  <p
+                    style={{
+                      margin: "11px 0 0",
+                      fontSize: 12.5,
+                      color: "var(--warn)",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    {result.pilotScenario.caveat}
+                  </p>
+                </div>
+              )}
 
               {result.valuedSupport.length > 0 && (
                 <div style={{ marginTop: 18 }}>

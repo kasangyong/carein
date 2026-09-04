@@ -21,7 +21,7 @@ import {
 } from "./decision";
 import { ASSUMPTION_BOUNDS } from "./validate";
 import { valuate, type ValuedSupport } from "./valuation";
-import type { CopayTier } from "./rates";
+import { CAREGIVER_COVERAGE_PILOT, type CopayTier } from "./rates";
 
 export interface AnalyzeInput {
   profile: CareProfile;
@@ -62,6 +62,17 @@ export interface AnalyzeResult {
   valuedSupport: ValuedSupport[];
   /** 가정을 양 끝으로 몰았을 때의 손익 범위 */
   decisionRange: { low: number; high: number; flips: boolean };
+  /**
+   * 간병비 급여화 대상으로 확인될 경우의 비용. 확인 전에는 대표 비용에 넣지 않는다.
+   * null 이면 이 사례에 해당하지 않거나 이미 확인된 상태다.
+   */
+  pilotScenario: {
+    monthlyIfApplies: number;
+    monthlyNow: number;
+    status: string;
+    conditions: readonly string[];
+    caveat: string;
+  } | null;
   sensitivity: ReturnType<typeof sensitivity>;
   decision: DecisionResult;
   familyCaregiver: ReturnType<typeof evaluateFamilyCaregiver>;
@@ -102,13 +113,21 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
 
   // 2. 비용 산출
   const detail = input.costDetail ?? {};
+  /**
+   * 대표 비용은 **확인된 것만** 반영한다.
+   *
+   * 이전에는 돌봄 형태가 요양병원이면 급여화 대상 여부를 묻지 않고 30%를 적용해
+   * 월 390만원을 117만원으로 낮추고 그 값을 "월 실부담"으로 내보냈다. 급여화는
+   * 2027년 상반기 시범사업 추진방안이고 병원·환자 조건이 붙는다. 확인되지 않은
+   * 감면을 현재 부담으로 표시하면 그 숫자를 믿고 결정한 사람이 손해를 본다.
+   *
+   * 감면이 적용된 모습은 "확인하고 신청하면" 막대에서만 보여준다.
+   */
   const cost = calculateMonthlyCost({
     grade,
     setting: input.setting,
     copayTier,
     ...detail,
-    // 확인만 하면 적용되는 경우를 함께 보여준다
-    caregiverPilotEligible: input.setting === "hospital" ? true : detail.caregiverPilotEligible,
   });
   /** 제도를 아무것도 못 찾았을 때의 비용 — 급여화도 미적용 */
   const costWithoutPrograms = calculateMonthlyCost({
@@ -118,6 +137,17 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     ...detail,
     caregiverPilotEligible: false,
   });
+  /** 급여화 대상으로 확인됐을 때의 비용 — 확인 후 시나리오 표시용 */
+  const costIfPilotApplies =
+    input.setting === "hospital" && !detail.caregiverPilotEligible
+      ? calculateMonthlyCost({
+          grade,
+          setting: input.setting,
+          copayTier,
+          ...detail,
+          caregiverPilotEligible: true,
+        })
+      : null;
 
   // 3. 다년 계산
   const costShareRatio =
@@ -294,6 +324,15 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     simulationWithoutPrograms,
     valuedSupport,
     decisionRange,
+    pilotScenario: costIfPilotApplies
+      ? {
+          monthlyIfApplies: costIfPilotApplies.monthlyTotal,
+          monthlyNow: cost.monthlyTotal,
+          status: CAREGIVER_COVERAGE_PILOT.status,
+          conditions: CAREGIVER_COVERAGE_PILOT.conditions,
+          caveat: CAREGIVER_COVERAGE_PILOT.caveat,
+        }
+      : null,
     sensitivity: sens,
     decision,
     familyCaregiver,
