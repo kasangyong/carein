@@ -37,12 +37,35 @@ export function FamilyPanel({
 
   const [copied, setCopied] = useState(false);
   const fairness = useMemo(() => evaluateFairness(people), [people]);
+  const [confirming, setConfirming] = useState(false);
+  const [manualUrl, setManualUrl] = useState<string | null>(null);
 
   function update(id: string, patch: Partial<Contributor>) {
     setPeople((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
 
-  async function share() {
+  /**
+   * 링크에 무엇이 담기는지 먼저 밝힌다.
+   *
+   * 프래그먼트라 서버에 안 남는 건 맞지만, 그게 "안전하다"는 뜻은 아니다.
+   * base64 는 암호화가 아니라 인코딩이고, 링크를 받은 사람은 치매 진단 여부·
+   * 소득·자산을 그대로 볼 수 있다. 단체 대화방에 붙이면 그 방 전체가 본다.
+   * 그래서 복사 전에 무엇이 들어가는지 보여주고 한 번 더 확인받는다.
+   */
+  const sharedFields = useMemo(() => {
+    if (!input) return [];
+    const p = input.profile;
+    const out: string[] = [];
+    if (p.recipientAge !== undefined) out.push(`부모님 나이 ${p.recipientAge}세`);
+    if (p.ltcGrade) out.push(`장기요양 ${p.ltcGrade}등급`);
+    if (p.hasDementiaDiagnosis) out.push("치매 진단 여부");
+    if (p.region) out.push(`지역 ${p.region}`);
+    if (p.incomePercentile !== undefined) out.push("소득 구간");
+    out.push("부모님 자산·소득", "본인 자산·소득·근속연수·나이");
+    return out;
+  }, [input]);
+
+  async function copyLink() {
     if (!input) return;
     const url = buildShareUrl(input);
     try {
@@ -50,7 +73,9 @@ export function FamilyPanel({
       setCopied(true);
       setTimeout(() => setCopied(false), 2400);
     } catch {
-      window.prompt("이 링크를 복사해 가족에게 보내세요", url);
+      // 클립보드가 막힌 환경(iframe·웹뷰)에서는 직접 선택하게 한다.
+      // prompt() 는 여러 브라우저에서 차단돼 아무 일도 안 일어난다.
+      setManualUrl(url);
     }
   }
 
@@ -148,28 +173,102 @@ export function FamilyPanel({
       </div>
 
       {input && (
-        <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            onClick={share}
-            style={{
-              border: "1px solid var(--line-strong)",
-              background: "var(--surface)",
-              padding: "8px 15px",
-              borderRadius: 2,
-              cursor: "pointer",
-              fontSize: 13.5,
-            }}
-          >
-            {copied ? "링크를 복사했습니다" : "가족에게 공유할 링크 만들기"}
-          </button>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-            링크에 사례가 담깁니다. 서버에 저장하지 않습니다.
-          </span>
+        <div style={{ marginTop: 14 }}>
+          {!confirming && !manualUrl && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setConfirming(true)}
+                style={btn}
+              >
+                {copied ? "링크를 복사했습니다" : "가족에게 공유할 링크 만들기"}
+              </button>
+              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                건강·소득 정보가 링크에 담깁니다. 무엇이 담기는지 먼저 보여드립니다.
+              </span>
+            </div>
+          )}
+
+          {confirming && !manualUrl && (
+            <div
+              className="card"
+              style={{ padding: "14px 16px", borderLeft: "3px solid var(--warn)" }}
+            >
+              <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+                이 링크에 담기는 정보
+              </p>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: 18,
+                  fontSize: 13,
+                  lineHeight: 1.8,
+                  color: "var(--ink-2)",
+                }}
+              >
+                {sharedFields.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+              <p
+                style={{
+                  margin: "11px 0 0",
+                  fontSize: 12.5,
+                  color: "var(--warn)",
+                  lineHeight: 1.7,
+                }}
+              >
+                주소 뒤(<span className="num">#</span> 다음)에 담기므로 서버에는 남지 않지만,
+                <strong> 암호화된 것은 아닙니다.</strong> 링크를 받은 사람은 위 내용을 그대로 볼
+                수 있습니다. 단체 대화방에 붙이지 마시고, 필요한 가족에게만 보내세요.
+              </p>
+              <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => {
+                    setConfirming(false);
+                    void copyLink();
+                  }}
+                  style={{ ...btn, borderColor: "var(--primary)", color: "var(--primary)" }}
+                >
+                  이해했습니다, 링크 복사
+                </button>
+                <button onClick={() => setConfirming(false)} style={btn}>
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+
+          {manualUrl && (
+            <div className="card" style={{ padding: "13px 16px" }}>
+              <p style={{ margin: "0 0 8px", fontSize: 13 }}>
+                이 환경에서는 자동 복사가 막혀 있습니다. 아래를 직접 복사해 주세요.
+              </p>
+              <input
+                readOnly
+                value={manualUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                style={{ ...cell, width: "100%", fontFamily: "var(--font-mono, monospace)" }}
+              />
+              <button onClick={() => setManualUrl(null)} style={{ ...btn, marginTop: 9 }}>
+                닫기
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>
   );
 }
+
+const btn: React.CSSProperties = {
+  border: "1px solid var(--line-strong)",
+  background: "var(--surface)",
+  padding: "8px 15px",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontSize: 13.5,
+  color: "var(--ink)",
+};
 
 const cell: React.CSSProperties = {
   border: "1px solid var(--line)",
