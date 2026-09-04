@@ -84,6 +84,8 @@ const ENDPOINTS: Endpoint[] = [
 export default function Developers() {
   const [open, setOpen] = useState<string | null>(null);
   const [out, setOut] = useState<Record<string, string>>({});
+  /** 화면에는 잘라 보여주지만 전체를 복사할 수 있어야 한다 */
+  const [full, setFull] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [bodies, setBodies] = useState<Record<string, string>>(
     Object.fromEntries(ENDPOINTS.filter((e) => e.body).map((e) => [key(e), e.body!])),
@@ -105,7 +107,21 @@ export default function Developers() {
       } catch {
         /* 원문 그대로 */
       }
-      setOut((p) => ({ ...p, [k]: `HTTP ${res.status}\n\n${pretty.slice(0, 6000)}` }));
+      // 잘라서 보여주면 JSON 이 깨진다. 잘랐다는 사실을 밝히고 전체는 복사할 수 있게 둔다.
+      const LIMIT = 6000;
+      setFull((p) => ({ ...p, [k]: pretty }));
+      setOut((p) => ({
+        ...p,
+        [k]:
+          `HTTP ${res.status}
+
+` +
+          (pretty.length > LIMIT
+            ? `${pretty.slice(0, LIMIT)}
+
+… 화면에는 ${LIMIT.toLocaleString()}자까지만 표시했습니다. 전체 ${pretty.length.toLocaleString()}자는 아래 "전체 복사"로 받으실 수 있습니다.`
+            : pretty),
+      }));
     } catch (err) {
       setOut((p) => ({
         ...p,
@@ -261,6 +277,24 @@ export default function Developers() {
                       >
                         {out[k]}
                       </pre>
+                    )}
+
+                    {full[k] && (
+                      <button
+                        onClick={() => void navigator.clipboard?.writeText(full[k])}
+                        style={{
+                          marginTop: 8,
+                          border: "1px solid var(--line-strong)",
+                          background: "var(--surface)",
+                          borderRadius: 2,
+                          padding: "5px 11px",
+                          cursor: "pointer",
+                          fontSize: 12.5,
+                          color: "var(--ink)",
+                        }}
+                      >
+                        전체 복사 ({full[k].length.toLocaleString()}자)
+                      </button>
                     )}
                   </div>
                 )}

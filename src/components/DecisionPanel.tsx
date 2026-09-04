@@ -221,12 +221,6 @@ export function DecisionPanel({
                   <td>{a.label}</td>
                   <td className="right num">
                     {fmtAssumption(overrides[a.key] ?? a.value, a.unit)}
-                    {overrides[a.key] !== undefined && overrides[a.key] !== a.value && (
-                      <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                        {" "}
-                        (기본 {fmtAssumption(a.value, a.unit)})
-                      </span>
-                    )}
                   </td>
                   <td>
                     <span

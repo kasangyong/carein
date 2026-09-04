@@ -93,14 +93,20 @@ export function ProgramTable({ summary }: { summary: MatchSummary }) {
                       <button
                         onClick={() => setOpen(isOpen ? null : r.program.id)}
                         aria-expanded={isOpen}
+                        // 버튼 이름이 전부 "+" 라 스크린리더로는 무엇을 펼치는지 알 수 없다
+                        aria-label={`${r.program.name} 판정 근거 ${isOpen ? "접기" : "펼치기"}`}
+                        title={`${r.program.name} 판정 근거 ${isOpen ? "접기" : "펼치기"}`}
                         style={{
                           border: "1px solid var(--line-strong)",
                           background: "transparent",
                           borderRadius: 2,
-                          width: 26,
-                          height: 24,
+                          // 터치 영역은 최소 44px. 보이는 크기는 그대로 두고 여백으로 넓힌다.
+                          minWidth: 44,
+                          minHeight: 44,
+                          padding: 0,
                           cursor: "pointer",
                           color: "var(--ink-2)",
+                          fontSize: 15,
                         }}
                       >
                         {isOpen ? "−" : "+"}

@@ -191,7 +191,7 @@ export default function Partners() {
                     }}
                   >
 {`<iframe
-  src="https://carein.example/widget?preset=hospital"
+  src="https://carein-two.vercel.app/widget?preset=hospital"
   width="360" height="420" frameborder="0"
   title="돌봄 재무 점검"
 ></iframe>`}
