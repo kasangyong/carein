@@ -35,15 +35,25 @@ def convert_all() -> list[tuple[pathlib.Path, int]]:
     try:
         for src in targets:
             pdf = src.with_suffix(".pdf")
+            # 결과 PDF 를 뷰어로 열어둔 채 다시 돌리는 일이 잦다. 잠긴 파일에 바로
+            # 쓰면 Word 가 통째로 실패하므로, 임시 이름으로 내보낸 뒤 교체한다.
+            tmp = pdf.with_name(pdf.stem + ".__new__.pdf")
+            tmp.unlink(missing_ok=True)
             doc = word.Documents.Open(str(src.resolve()), ReadOnly=True)
             try:
-                # 필드·목차가 없더라도 페이지 수 집계를 위해 한 번 재계산한다
+                # 페이지 수 집계를 위해 한 번 재계산한다
                 doc.Repaginate()
                 pages = doc.ComputeStatistics(2)  # wdStatisticPages
-                doc.SaveAs(str(pdf.resolve()), FileFormat=WD_FORMAT_PDF)
+                doc.SaveAs(str(tmp.resolve()), FileFormat=WD_FORMAT_PDF)
             finally:
                 doc.Close(False)
-            done.append((pdf, pages))
+            try:
+                tmp.replace(pdf)
+                done.append((pdf, pages))
+            except OSError:
+                print(f"  ! {pdf.name} 이(가) 열려 있어 교체하지 못했습니다.")
+                print(f"    새 파일: {tmp.name}. 뷰어를 닫고 다시 실행하면 정리됩니다.")
+                done.append((tmp, pages))
     finally:
         word.Quit()
     return done
