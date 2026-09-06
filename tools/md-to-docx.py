@@ -72,27 +72,32 @@ def run_font(run, name: str = BODY_FONT, size: float | None = None) -> None:
 
 
 # ── 인라인 서식: **굵게**, `코드`, *기울임* ────────────────────
+LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 INLINE = re.compile(r"(\*\*.+?\*\*|`[^`]+`|\*[^*\s][^*]*?\*)")
 
 
-def add_inline(par, text: str, size: float | None = None) -> None:
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # 링크는 글자만
+def add_inline(
+    par, text: str, size: float | None = None, bold: bool = False, italic: bool = False
+) -> None:
+    """
+    굵게 안에 기울임이 들어가는 경우가 있다("**...*돌보는 사람*의 재무...**").
+    한 겹만 벗기면 안쪽 별표가 글자로 남으므로 재귀로 처리한다.
+    """
+    text = LINK.sub(r"", text)  # 링크는 글자만 남긴다
     for part in INLINE.split(text):
         if not part:
             continue
-        if part.startswith("**") and part.endswith("**"):
-            r = par.add_run(part[2:-2])
-            r.bold = True
-            run_font(r, BODY_FONT, size)
-        elif part.startswith("`") and part.endswith("`"):
+        if part.startswith("**") and part.endswith("**") and len(part) > 4:
+            add_inline(par, part[2:-2], size, True, italic)
+        elif part.startswith("`") and part.endswith("`") and len(part) > 2:
             r = par.add_run(part[1:-1])
+            r.bold, r.italic = bold, italic
             run_font(r, MONO_FONT, (size or 10) - 0.5)
-        elif part.startswith("*") and part.endswith("*"):
-            r = par.add_run(part[1:-1])
-            r.italic = True
-            run_font(r, BODY_FONT, size)
+        elif part.startswith("*") and part.endswith("*") and len(part) > 2:
+            add_inline(par, part[1:-1], size, bold, True)
         else:
             r = par.add_run(part)
+            r.bold, r.italic = bold, italic
             run_font(r, BODY_FONT, size)
 
 
